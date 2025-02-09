@@ -1,2 +1,27 @@
-@import "tailwindcss";
+/* Don't do `@import "tailwindcss"`, do this instead: */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme" layer(theme) theme(static);
+@import "tailwindcss/preflight" layer(base);
+@import "tailwindcss/utilities" layer(utilities);
+
+/* Then import "@nuxt/ui": */
+@import "@nuxt/ui";
+
+/* @import "tailwindcss"; */
 @import "@nuxt/ui-pro";
+
+@source "../content";
+
+
+:root {
+	/* --ui-bg: var(--ui-color-neutral-200); */
+}
+
+@theme {
+	--font-sans: 'Public Sans', sans-serif;
+	/* --font-serif: 'Merriweather', serif; */
+
+	--font-serif: 'Italiana', serif;
+
+}

@@ -1,3 +1,14 @@
+<template>
+  <div class="error">
+    {{ error.statusCode }}: {{ error.message }}
+
+    <div
+      class=""
+      v-html="error.stack"
+    />
+  </div>
+</template>
+
 <script setup lang="ts">
 import type { ParsedContent } from '@nuxt/content'
 import type { NuxtError } from '#app'
@@ -28,28 +39,3 @@ const { data: files } = useLazyFetch<ParsedContent[]>('/api/search.json', {
 
 provide('navigation', navigation)
 </script>
-
-<template>
-  <div>
-    <AppHeader />
-
-    <UMain>
-      <UContainer>
-        <UPage>
-          <UPageError :error="error" />
-        </UPage>
-      </UContainer>
-    </UMain>
-
-    <AppFooter />
-
-    <ClientOnly>
-      <LazyUContentSearch
-        :files="files"
-        :navigation="navigation"
-      />
-    </ClientOnly>
-
-    <UNotifications />
-  </div>
-</template>
