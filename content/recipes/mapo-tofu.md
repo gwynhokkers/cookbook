@@ -2,7 +2,11 @@
 name: Mapo Tofu
 date: 2020-11-11
 image: mapo-tofu.jpg
-tags: [ asian, tofu, spicy, chinese ]
+tags:
+  - asian
+  - tofu
+  - spicy
+  - chinese
 source: https://thewoksoflife.com/ma-po-tofu-real-deal/
 ---
 
@@ -27,4 +31,3 @@ This mapo tofu recipe is the true blue, authentic real deal—the spicy, tongue-
 - 1/4 teaspoon sugar (optional)
 - 1 scallion (finely chopped)
 ::
-
