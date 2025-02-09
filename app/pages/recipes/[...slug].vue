@@ -29,7 +29,6 @@
         </UBadge>
       </div>
       <div class="">
-        {{ page?.source }}
         <UButton
           v-if="page?.source"
           icon="i-lucide-link"
