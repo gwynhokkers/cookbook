@@ -14,6 +14,7 @@
             <template #header>
               <NuxtImg
                 v-if="recipe?.image"
+                class="aspect-square object-cover"
                 :src="'img/recipes/' + recipe.image"
               />
             </template>

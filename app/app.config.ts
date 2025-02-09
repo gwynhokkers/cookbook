@@ -135,20 +135,6 @@ export default defineAppConfig({
           ]
         }
       ]
-    //   [
-    //     {
-    //       label: 'GitHub',
-    //       icon: 'i-simple-icons-github',
-    //       badge: '3.8k',
-    //       to: 'https://github.com/nuxt/ui',
-    //       target: '_blank'
-    //     },
-    //     {
-    //       label: 'Help',
-    //       icon: 'i-lucide-circle-help',
-    //       disabled: true
-    //     }
-    //   ]
     ],
     logo: {
       alt: '',
@@ -180,18 +166,6 @@ export default defineAppConfig({
         'target': '_blank',
         'aria-label': 'Nuxt Website'
       },
-      // {
-      //   'icon': 'i-simple-icons-discord',
-      //   'to': 'https://discord.com/invite/ps2h6QT',
-      //   'target': '_blank',
-      //   'aria-label': 'Nuxt UI on Discord'
-      // },
-      // {
-      //   'icon': 'i-simple-icons-x',
-      //   'to': 'https://x.com/nuxt_js',
-      //   'target': '_blank',
-      //   'aria-label': 'Nuxt on X'
-      // },
       {
         'icon': 'i-simple-icons-github',
         'to': 'https://github.com/gwynhokkers/cookbook',
