@@ -1,6 +1,26 @@
 <template>
   <UPage>
-    <UPageHero title="Cook Book" />
+    <UPageHero
+      class="font-serif"
+      description=""
+      color="neutral"
+    >
+      <template #title>
+        <span class="font-serif">
+          Cook<span class="text-green-600">Book</span>
+          <!-- <UBadge
+            label="Recipes"
+            variant="subtle"
+            class="mb-0.5"
+          /> -->
+        </span>
+      </template>
+      <template #description>
+        <p class="font-semibold">
+          A collection of recipes by Meg & Gwyn
+        </p>
+      </template>
+    </UPageHero>
 
     <UPageBody>
       <UPageSection>
@@ -33,11 +53,11 @@ const { data: recipes } = await useAsyncData('recipes', () => {
     .select('title', 'path', 'description', 'image')
     .all()
 })
-// useSeoMeta({
-//   titleTemplate: '',
-//   title: page.value.title,
-//   ogTitle: page.value.title,
-//   description: page.value.description,
-//   ogDescription: page.value.description
-// })
+
+useSeoMeta({
+  title: 'CookBook - A collection of recipes by Meg & Gwyn',
+  ogTitle: 'CookBook - A collection of recipes by Meg & Gwyn'
+//   description: page?.value.description,
+//   ogDescription: page?.value.description
+})
 </script>

@@ -9,8 +9,7 @@ const { header } = useAppConfig()
         <UColorModeImage v-bind="{ class: 'h-6 w-auto', ...header?.logo }" />
       </template>
       <template v-else>
-        <span>
-
+        <span class="font-serif">
           Cook<span class="text-green-600">Book</span>
           <!-- <UBadge
             label="Recipes"
