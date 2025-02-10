@@ -1,5 +1,5 @@
 ---
-name: Small Batch Chocolate Chip Cookies
+title: Small Batch Chocolate Chip Cookies
 date: 2025-02-09
 image: small-batch-cookies.webp
 tags: [ cookies, dessert, baking ]
@@ -10,7 +10,7 @@ These small batch chocolate chip cookies are perfect for when you’re craving a
 
 <!--more-->
 
-::recipe-ingredients
+::recipe-ingredient-list
 - 1/4 cup (60 grams) unsalted butter softened
 - 1/4 cup (50 grams) light brown sugar packed
 - 2 tablespoons (25 grams) granulated sugar

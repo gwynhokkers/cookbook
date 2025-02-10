@@ -2,12 +2,12 @@
 export default defineNuxtConfig({
 
   modules: [
-    '@nuxt/content',
     '@nuxt/eslint', // '@nuxt/ui',
-    '@nuxt/ui-pro',
     '@nuxt/fonts',
     'nuxt-og-image',
-    '@nuxt/image'
+    '@nuxt/image',
+    '@nuxt/ui-pro',
+    '@nuxt/content'
   ],
 
   devtools: {

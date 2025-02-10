@@ -1,5 +1,8 @@
 <template>
-  <div class="py-4">
+  <div
+    id="ingredients"
+    class="py-4"
+  >
     <h2 class="text-3xl font-serif mb-2">
       Ingredients
     </h2>

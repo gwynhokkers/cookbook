@@ -3,7 +3,7 @@
 
 const { seo } = useAppConfig()
 
-const { data: navigation } = await useAsyncData('navigation', () => fetchContentNavigation())
+// const { data: navigation } = await useAsyncData('navigation', () => fetchContentNavigation())
 // const { data: files } = useLazyFetch<ParsedContent[]>('/api/search.json', {
 //   default: () => [],
 //   server: false
@@ -29,15 +29,51 @@ useSeoMeta({
   twitterCard: 'summary_large_image'
 })
 
-provide('navigation', navigation)
+// provide('navigation', navigation)
+
+// const { data: navigation } = await useAsyncData('navigation', () => queryCollectionNavigation('content'))
+
+// const { data: recipes } = useLazyAsyncData('search-recipes', () => queryCollectionSearchSections('recipes'), {
+//   server: false
+// })
+
+const { data: recipes } = useLazyAsyncData('search-recipes', () => queryCollectionSearchSections('recipes'), {
+  server: false
+})
+
+const { data: navigation } = useAsyncData('navigation', () => queryCollectionNavigation('recipes'))
+const links = [{
+  label: 'Docs',
+  icon: 'i-lucide-book',
+  to: '/getting-started'
+}, {
+  label: 'Components',
+  icon: 'i-lucide-box',
+  to: '/components'
+}, {
+  label: 'Roadmap',
+  icon: 'i-lucide-chart-no-axes-gantt',
+  to: '/roadmap'
+}]
+
+const searchTerm = ref('')
 </script>
 
 <template>
-  <div>
+  <UApp>
     <NuxtLoadingIndicator />
 
     <AppHeader />
-
+    <ClientOnly>
+      <LazyUContentSearch
+        v-model:search-term="searchTerm"
+        :files="recipes"
+        shortcut="meta_k"
+        :fuse="{ resultLimit: 42 }"
+        :navigation="navigation"
+      />
+      <!-- :links="links" -->
+    </ClientOnly>
     <UMain>
       <NuxtLayout>
         <NuxtPage />
@@ -45,5 +81,5 @@ provide('navigation', navigation)
     </UMain>
 
     <AppFooter />
-  </div>
+  </UApp>
 </template>

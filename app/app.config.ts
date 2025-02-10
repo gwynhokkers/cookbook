@@ -151,7 +151,7 @@ export default defineAppConfig({
     }]
   },
   footer: {
-    credits: 'Copyright © 2023',
+    credits: 'Copyright © 2025',
     colorMode: false,
     links: [
       {

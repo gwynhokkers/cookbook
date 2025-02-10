@@ -1,5 +1,5 @@
 ---
-name: Mapo Tofu
+title: Mapo Tofu
 date: 2020-11-11
 image: mapo-tofu.jpg
 tags: [ asian, tofu, spicy, chinese ]
@@ -10,7 +10,7 @@ This mapo tofu recipe is the true blue, authentic real deal—the spicy, tongue-
 
 <!--more-->
 
-::recipe-ingredients
+::recipe-ingredient-list
 - 1/2 cup oil
 - 1-2 fresh Thai bird chili peppers (thinly sliced)
 - 6-8 dried red chilies (roughly chopped)
