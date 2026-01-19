@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ContentTocLink } from '@nuxt/ui-pro/runtime/components/content/ContentToc.vue'
+import type { ContentTocLink } from '@nuxt/ui/runtime/components/content/ContentToc.vue'
 
 const { seo } = useAppConfig()
 

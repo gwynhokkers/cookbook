@@ -34,6 +34,8 @@ const { header } = useAppConfig()
         :label="null"
       />
 
+      <AuthButton />
+
       <UColorModeButton v-if="header?.colorMode" />
 
       <template v-if="header?.links">

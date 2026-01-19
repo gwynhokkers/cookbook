@@ -37,11 +37,18 @@ useSeoMeta({
 //   server: false
 // })
 
-const { data: recipes } = useLazyAsyncData('search-recipes', () => queryCollectionSearchSections('recipes'), {
+const { data: recipes } = useLazyAsyncData('search-recipes', () => $fetch('/api/search.json'), {
   server: false
 })
 
-const { data: navigation } = useAsyncData('navigation', () => queryCollectionNavigation('recipes'))
+const { data: allRecipes } = await useFetch('/api/recipes')
+const navigation = computed(() => {
+  if (!allRecipes.value) return []
+  return allRecipes.value.map((r: any) => ({
+    title: r.title,
+    to: `/recipes/${r.id}`
+  }))
+})
 const links = [{
   label: 'Docs',
   icon: 'i-lucide-book',
@@ -70,7 +77,7 @@ const searchTerm = ref('')
         :files="recipes"
         shortcut="meta_k"
         :fuse="{ resultLimit: 42 }"
-        :navigation="navigation"
+        :navigation="navigation.value"
       />
       <!-- :links="links" -->
     </ClientOnly>

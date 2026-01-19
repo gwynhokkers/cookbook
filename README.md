@@ -1,42 +1,149 @@
-![nuxt-ui-docs-social-card](https://github.com/nuxt-ui-pro/docs/assets/739984/f64e13d9-9ae0-4e03-bf7f-6be4c36cd9ba)
+# CookBook
 
-# Nuxt UI Pro - Docs template
+A full-stack recipe management application built with Nuxt, NuxtHub, and Better Auth. Store and manage your recipes with image uploads, authentication, and a beautiful UI.
 
-[![Nuxt UI Pro](https://img.shields.io/badge/Made%20with-Nuxt%20UI%20Pro-00DC82?logo=nuxt.js&labelColor=020420)](https://ui.nuxt.com/pro)
-[![Nuxt Studio](https://img.shields.io/badge/Open%20in%20Nuxt%20Studio-18181B?&logo=nuxt.js&logoColor=3BB5EC)](https://nuxt.studio/themes/docs)
+## Features
 
-- [Live demo](https://docs-template.nuxt.dev/)
-- [Play on Stackblitz](https://stackblitz.com/github/nuxt-ui-pro/docs)
-- [Documentation](https://ui.nuxt.com/pro/getting-started)
-- [Clone on Nuxt Studio](https://nuxt.studio/themes/docs)
+- 🍳 Recipe management with image uploads
+- 🔐 Authentication via Better Auth (GitHub OAuth)
+- 💾 PostgreSQL database with Drizzle ORM
+- 📸 Image storage via NuxtHub Blob Storage
+- 🎨 Beautiful UI with Nuxt UI
+- 📝 Markdown support for recipe descriptions
+- 🔍 Full-text search
 
-## Quick Start
+## Prerequisites
 
-```bash [Terminal]
-npx nuxi init -t github:nuxt-ui-pro/docs
-```
+- Node.js 18+ or Bun
+- PostgreSQL database (or use PGlite for local development)
+- GitHub account (for OAuth authentication)
 
-## Setup
+## Installation
 
-Make sure to install the dependencies:
+1. Clone the repository:
 
 ```bash
-# npm
+git clone <repository-url>
+cd cookbook
+```
+
+2. Install dependencies:
+
+```bash
+# Using npm
 npm install
 
-# pnpm
+# Using pnpm
 pnpm install
 
-# yarn
+# Using yarn
 yarn install
 
-# bun
+# Using bun
 bun install
 ```
 
-## Development Server
+## Environment Setup
 
-Start the development server on `http://localhost:3000`:
+Create a `.env` file in the root directory:
+
+```bash
+cp .env.example .env
+```
+
+### Required Environment Variables
+
+Edit `.env` and configure the following:
+
+#### Better Auth Configuration
+
+```env
+# Generate a random secret for Better Auth (use a secure random string)
+BETTER_AUTH_SECRET=your-random-secret-key-here-change-in-production
+
+# Better Auth base URL (use your production domain in production)
+BETTER_AUTH_URL=http://localhost:3000
+```
+
+#### GitHub OAuth
+
+1. Create a GitHub OAuth App:
+   - Go to [GitHub Settings > Developer settings > OAuth Apps](https://github.com/settings/developers)
+   - Click "New OAuth App"
+   - Set **Application name**: CookBook (or your preferred name)
+   - Set **Homepage URL**: `http://localhost:3000` (or your production URL)
+   - Set **Authorization callback URL**: `http://localhost:3000/api/auth/callback/github` (or `https://yourdomain.com/api/auth/callback/github` for production)
+   - Click "Register application"
+   - Copy the **Client ID** and generate a **Client Secret**
+
+2. Add to `.env`:
+
+```env
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+```
+
+#### Database Configuration
+
+For PostgreSQL, set one of these environment variables:
+
+```env
+# Option 1: Use DATABASE_URL
+DATABASE_URL=postgresql://user:password@localhost:5432/cookbook
+
+# Option 2: Use POSTGRES_URL
+POSTGRES_URL=postgresql://user:password@localhost:5432/cookbook
+
+# Option 3: Use POSTGRESQL_URL
+POSTGRESQL_URL=postgresql://user:password@localhost:5432/cookbook
+```
+
+**Note:** If no database URL is set, NuxtHub will use PGlite (embedded PostgreSQL) for local development, which doesn't require a separate PostgreSQL server.
+
+#### Migration Secret (Optional)
+
+If you want to run the migration script to import existing recipes:
+
+```env
+MIGRATION_SECRET=migration-secret
+```
+
+## Database Setup
+
+### Using PostgreSQL
+
+1. **Install PostgreSQL** (if not already installed):
+   - macOS: `brew install postgresql`
+   - Linux: Use your distribution's package manager
+   - Windows: Download from [postgresql.org](https://www.postgresql.org/download/)
+
+2. **Create a database**:
+
+```bash
+createdb cookbook
+# or using psql
+psql -c "CREATE DATABASE cookbook;"
+```
+
+3. **Update your `.env`** with the connection string (see Database Configuration above)
+
+### Using PGlite (Local Development)
+
+If you don't set a `DATABASE_URL`, NuxtHub will automatically use PGlite for local development. No additional setup required!
+
+## Generate Database Migrations
+
+After setting up your environment, generate the database schema:
+
+```bash
+npx nuxt db generate
+```
+
+This creates migration files in `server/db/migrations/` which are automatically applied when you start the development server.
+
+## Development
+
+Start the development server:
 
 ```bash
 # npm
@@ -52,74 +159,105 @@ yarn dev
 bun run dev
 ```
 
-## Production
+The application will be available at `http://localhost:3000`.
 
-Build the application for production:
+### First Run
 
-```bash
-# npm
-npm run build
+1. The database migrations will run automatically on first start
+2. Visit `http://localhost:3000`
+3. Click "Sign In" to authenticate with GitHub
+4. After authentication, you can create new recipes
 
-# pnpm
-pnpm run build
+## Migrating Existing Recipes
 
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
+If you have existing recipes in the `content/recipes/` directory, you can migrate them to the database:
 
 ```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm run preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
+# Make a POST request to the migration endpoint
+curl -X POST http://localhost:3000/api/migrate \
+  -H "Authorization: Bearer migration-secret"
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+**Note:** Replace `migration-secret` with the value from your `.env` file (or the default if not set).
 
-## Nuxt Studio integration
+The migration script will:
+- Parse all markdown files from `content/recipes/`
+- Extract frontmatter and content
+- Upload images to blob storage
+- Insert recipes into the database
 
-Add `@nuxthq/studio` dependency to your package.json:
+## Project Structure
+
+```
+cookbook/
+├── app/                    # Nuxt app directory
+│   ├── components/        # Vue components
+│   ├── pages/             # Route pages
+│   └── composables/       # Composables (useAuth, etc.)
+├── server/                 # Server-side code
+│   ├── api/               # API routes
+│   ├── db/                # Database schema and migrations
+│   ├── plugins/           # Nitro plugins
+│   └── utils/             # Server utilities (auth, etc.)
+├── content/               # NuxtContent files (for other content pages)
+├── public/                # Static assets
+└── nuxt.config.ts         # Nuxt configuration
+```
+
+## Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run generate` - Generate static site
+- `npm run lint` - Run ESLint
+- `npm run typecheck` - Run TypeScript type checking
+- `npx nuxt db generate` - Generate database migrations
+
+## Deployment
+
+### Deploy to NuxtHub
+
+1. Install NuxtHub CLI (if not already installed):
 
 ```bash
-# npm
-npm install --save-dev @nuxthq/studio
-
-# pnpm
-pnpm add -D @nuxthq/studio
-
-# yarn
-yarn add -D @nuxthq/studio
-
-# bun
-bun add -d @nuxthq/studio
+npm install -g @nuxthub/cli
 ```
 
-Add this module to your `nuxt.config.ts`:
+2. Login to NuxtHub:
 
-```ts
-export default defineNuxtConfig({
-  ...
-  modules: [
-    ...
-    '@nuxthq/studio'
-  ]
-})
+```bash
+npx nuxthub login
 ```
 
-Read more on [Nuxt Studio docs](https://nuxt.studio/docs/projects/setup).
+3. Deploy:
 
-## Renovate integration
+```bash
+npx nuxthub deploy
+```
 
-Install [Renovate GitHub app](https://github.com/apps/renovate/installations/select_target) on your repository and you are good to go.
+### Environment Variables in Production
+
+Make sure to set all environment variables in your deployment platform:
+
+- `BETTER_AUTH_SECRET`
+- `BETTER_AUTH_URL` (your production domain)
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `DATABASE_URL` (your production PostgreSQL connection string)
+
+Update your GitHub OAuth App callback URL to match your production domain.
+
+## Technologies
+
+- **Nuxt 4** - Vue.js framework
+- **NuxtHub** - Backend services (database, blob storage, KV, cache)
+- **Better Auth** - Authentication library
+- **Drizzle ORM** - Type-safe SQL ORM
+- **PostgreSQL** - Database
+- **Nuxt UI** - UI component library
+- **Nuxt Content** - Content management (for other pages)
+
+## License
+
+MIT

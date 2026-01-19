@@ -6,9 +6,18 @@ export default defineNuxtConfig({
     '@nuxt/fonts',
     'nuxt-og-image',
     '@nuxt/image',
-    '@nuxt/ui-pro',
-    '@nuxt/content'
+    '@nuxt/ui',
+    '@nuxt/content',
+    '@nuxthub/core',
+    'nuxt-auth-utils'
   ],
+
+  hub: {
+    db: 'postgresql',
+    blob: true,
+    kv: true,
+    cache: true
+  },
 
   devtools: {
     enabled: true
@@ -34,6 +43,18 @@ export default defineNuxtConfig({
     '/': { prerender: true },
     '/api/search.json': { prerender: true }
   },
+  
+  runtimeConfig: {
+    session: {
+      password: process.env.NUXT_SESSION_PASSWORD || 'change-me-in-production-min-32-chars-long'
+    },
+    oauth: {
+      github: {
+        clientId: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET
+      }
+    }
+  },
   future: {
     compatibilityVersion: 4
   },
@@ -56,6 +77,27 @@ export default defineNuxtConfig({
   fonts: {
     experimental: {
       processCSSVariables: true
+    }
+  },
+
+  // vite: {
+  //   resolve: {
+  //     alias: {
+  //       'unenv/runtime/mock/empty': 'unenv/dist/runtime/mock/empty.mjs'
+  //     }
+  //   }
+  // },
+
+  nitro: {
+    experimental: {
+      wasm: true
+    },
+    // Ensure hub: imports are properly resolved
+    esbuild: {
+      options: {
+        // Allow hub: protocol imports
+        target: 'esnext'
+      }
     }
   }
 

@@ -24,18 +24,27 @@
 
     <UPageBody>
       <UPageSection>
+        <div v-if="loggedIn" class="mb-6">
+          <UButton
+            icon="i-heroicons-plus"
+            to="/recipes/new"
+          >
+            Create New Recipe
+          </UButton>
+        </div>
         <UPageGrid>
           <UPageCard
-            v-for="(recipe, index) in recipes"
-            :key="index"
-            :to="recipe.path"
-            v-bind="recipe"
+            v-for="recipe in recipes"
+            :key="recipe.id"
+            :to="`/recipes/${recipe.id}`"
+            :title="recipe.title"
+            :description="recipe.description"
           >
             <template #header>
               <NuxtImg
-                v-if="recipe?.image"
+                v-if="recipe?.imageUrl"
                 class="aspect-square object-cover"
-                :src="'img/recipes/' + recipe.image"
+                :src="recipe.imageUrl"
               />
             </template>
           </UPageCard>
@@ -46,18 +55,12 @@
 </template>
 
 <script setup lang="ts">
-// const { data: page } = await useAsyncData('index', () => queryContent('/').findOne())
-const { data: recipes } = await useAsyncData('recipes', () => {
-  return queryCollection('recipes')
-    .order('date', 'DESC')
-    .select('title', 'path', 'description', 'image')
-    .all()
-})
+const { data: recipes } = await useFetch('/api/recipes')
+
+const { loggedIn } = useUserSession()
 
 useSeoMeta({
   title: 'CookBook - A collection of recipes by Meg & Gwyn',
   ogTitle: 'CookBook - A collection of recipes by Meg & Gwyn'
-//   description: page?.value.description,
-//   ogDescription: page?.value.description
 })
 </script>
