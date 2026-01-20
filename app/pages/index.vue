@@ -45,6 +45,8 @@
                 v-if="recipe?.imageUrl"
                 class="aspect-square object-cover"
                 :src="recipe.imageUrl"
+                :alt="recipe.title"
+                provider="blob"
               />
             </template>
           </UPageCard>

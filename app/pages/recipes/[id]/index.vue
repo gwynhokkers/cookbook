@@ -29,7 +29,7 @@
         <UButton
           icon="i-heroicons-trash"
           variant="ghost"
-          color="red"
+          color="error"
           @click="handleDelete"
         >
           Delete
@@ -41,9 +41,10 @@
         v-if="recipe?.imageUrl"
         :src="recipe.imageUrl"
         :alt="recipe.title"
-        :img-attrs="{ class: 'w-full rounded-lg overflow-hidden mb-4' }"
-        width="800"
-        height="600"
+        :img-attrs="{ class: 'w-full rounded-lg overflow-hidden mb-4 max-h-[600px] object-cover' }"
+        :width="800"
+        :height="600"
+        provider="blob"
       />
       <div class="flex justify-between">
         <div class="flex gap-2 mb-2">
@@ -73,24 +74,32 @@
         <p>{{ recipe.description }}</p>
       </div>
 
-      <RecipeIngredientList v-if="recipe?.ingredients && recipe.ingredients.length > 0">
+      <RecipeIngredientList v-if="recipeIngredients && recipeIngredients.length > 0">
         <ul class="list-disc list-inside space-y-2">
-          <li v-for="(ingredient, index) in recipe.ingredients" :key="index">
-            {{ ingredient }}
+          <li v-for="(ri, index) in recipeIngredients" :key="index">
+            {{ ri.amount }} {{ ri.unit }} {{ ri.ingredient?.name || 'Unknown' }}
+            <span v-if="ri.notes" class="text-gray-600 dark:text-gray-400">({{ ri.notes }})</span>
           </li>
         </ul>
       </RecipeIngredientList>
 
-      <div v-if="recipe?.steps && recipe.steps.length > 0" class="space-y-6 mt-8">
-        <RecipeStep
-          v-for="(step, index) in recipe.steps"
-          :key="index"
-          :title="step.title"
-        >
-          <div class="prose max-w-none">
-            <p>{{ step.content }}</p>
-          </div>
-        </RecipeStep>
+      <div v-if="recipe?.steps && recipe.steps.length > 0">
+        <h2 class="text-3xl font-serif text-pretty mb-4">Steps</h2>
+        <div class="space-y-6 divide-y divide-gray-200">
+          <RecipeStep
+            v-for="(step, index) in recipe.steps"
+            class="pb-6"
+            :key="index + '-' + step.title"
+            :index="index + 1"
+            :title="step.title"
+            :content="step.content"
+          />
+        </div>
+      </div>
+
+      <!-- Nutrition Section -->
+      <div class="mt-8">
+        <RecipeNutrition :recipe-id="recipeId" />
       </div>
 
       <USeparator class="mt-8" />
@@ -110,7 +119,9 @@ definePageMeta({
   layout: 'recipes'
 })
 
-const { data: recipe, pending, error } = await useFetch(`/api/recipes/${route.params.id}`)
+const recipeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
+
+const { data: recipe, pending, error } = await useFetch(`/api/recipes/${recipeId}`)
 
 if (error.value) {
   throw createError({
@@ -118,6 +129,9 @@ if (error.value) {
     statusMessage: 'Recipe not found'
   })
 }
+
+// Load recipe ingredients
+const { data: recipeIngredients } = await useFetch(`/api/recipes/${recipeId}/ingredients`).catch(() => ({ value: [] }))
 
 // Get navigation from all recipes
 const { data: allRecipes } = await useFetch('/api/recipes')
@@ -132,7 +146,7 @@ const navigation = computed(() => {
 const links = computed(() => {
   const result: ContentTocLink[] = []
   
-  if (recipe.value?.ingredients && recipe.value.ingredients.length > 0) {
+  if (recipeIngredients.value && recipeIngredients.value.length > 0) {
     result.push({
       id: 'ingredients',
       depth: 1,
@@ -153,6 +167,12 @@ const links = computed(() => {
     })
   }
 
+  result.push({
+    id: 'nutrition',
+    depth: 1,
+    text: 'Nutrition'
+  })
+
   return result
 })
 
@@ -162,7 +182,7 @@ const handleDelete = async () => {
   }
 
   try {
-    await $fetch(`/api/recipes/${route.params.id}`, {
+    await $fetch(`/api/recipes/${recipeId}`, {
       method: 'DELETE'
     })
     await router.push('/')
@@ -174,7 +194,7 @@ const handleDelete = async () => {
 
 useSeoMeta({
   title: recipe.value?.title,
-  ogTitle: `${recipe.value?.title} - ${seo?.siteName}`,
+  ogTitle: `${recipe.value?.title} | ${seo?.siteName}`,
   description: recipe.value?.description,
   ogDescription: recipe.value?.description
 })

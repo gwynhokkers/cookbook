@@ -1,12 +1,11 @@
 import { db, schema } from '../../db'
-import { requireAuth } from '../../utils/requireAuth'
 import { nanoid } from 'nanoid'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const body = await readBody(event)
 
-  const { title, description, imageUrl, date, tags, source, ingredients, steps } = body
+  const { title, description, imageUrl, date, tags, source, steps } = body
 
   if (!title) {
     throw createError({
@@ -26,7 +25,6 @@ export default defineEventHandler(async (event) => {
     date: date ? new Date(date) : now,
     tags: tags || [],
     source: source || null,
-    ingredients: ingredients || [],
     steps: steps || [],
     authorId: session.user.id,
     createdAt: now,

@@ -8,15 +8,18 @@
     />
     
     <div v-if="previewUrl" class="relative">
-      <img
+      <NuxtImg
         :src="previewUrl"
         alt="Preview"
         class="w-full max-w-md rounded-lg"
+        width="400"
+        height="300"
+        loading="lazy"
       />
       <UButton
         v-if="!uploading"
         icon="i-heroicons-x-mark"
-        color="red"
+        color="error"
         variant="solid"
         class="absolute top-2 right-2"
         @click="clearImage"
@@ -30,7 +33,7 @@
 
     <UAlert
       v-if="error"
-      color="red"
+      color="error"
       variant="soft"
       :title="error"
     />

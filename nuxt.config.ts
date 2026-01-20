@@ -9,7 +9,8 @@ export default defineNuxtConfig({
     '@nuxt/ui',
     '@nuxt/content',
     '@nuxthub/core',
-    'nuxt-auth-utils'
+    'nuxt-auth-utils',
+    '@pinia/nuxt'
   ],
 
   hub: {
@@ -17,6 +18,15 @@ export default defineNuxtConfig({
     blob: true,
     kv: true,
     cache: true
+  },
+
+  image: {
+    providers: {
+      blob: {
+        provider: '~/providers/blob',
+        options: {}
+      }
+    }
   },
 
   devtools: {
@@ -53,6 +63,9 @@ export default defineNuxtConfig({
         clientId: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET
       }
+    },
+    spoonacular: {
+      apiKey: process.env.SPOON_API_KEY
     }
   },
   future: {

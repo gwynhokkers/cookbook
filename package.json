@@ -19,10 +19,11 @@
     "@nuxt/fonts": "^0.10.3",
     "@nuxt/ui": "^4.0.0",
     "@nuxthub/core": "latest",
+    "@pinia/nuxt": "^0.11.3",
     "drizzle-orm": "latest",
-    "nuxt-auth-utils": "latest",
     "gray-matter": "^4.0.3",
     "nanoid": "^5.0.0",
+    "nuxt-auth-utils": "latest",
     "nuxt-og-image": "^5.1.3",
     "postgres": "latest",
     "zod": "^3.22.0"

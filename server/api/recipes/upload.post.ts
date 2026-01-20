@@ -1,9 +1,6 @@
-import { requireAuth } from '../../utils/requireAuth'
-
 export default defineEventHandler(async (event) => {
   await requireAuth(event)
   
-  // @ts-expect-error - hub:blob is a virtual import resolved by Nitro
   const { blob, ensureBlob } = await import('hub:blob')
 
   const formData = await readFormData(event)
@@ -16,14 +13,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Validate file
-  const arrayBuffer = await file.arrayBuffer()
-  const buffer = Buffer.from(arrayBuffer)
-
-  ensureBlob(buffer, {
-    maxSize: '5MB',
+  // Validate file - ensureBlob expects a Blob/File, not a Buffer
+  // File extends Blob, so we can pass it directly
+  ensureBlob(file, {
+    maxSize: '4MB',
     types: ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
   })
+
+  // Convert to buffer for blob.put() which may need Buffer
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
 
   // Generate unique filename
   const timestamp = Date.now()
@@ -36,8 +35,12 @@ export default defineEventHandler(async (event) => {
     contentType: file.type
   })
 
+  // For local filesystem storage, construct a proper URL using our serving endpoint
+  // The blob.put() might return a pathname or URL, but we'll use our endpoint for consistency
+  const imageUrl = uploaded.url || `/api/images/${filename}`
+
   return {
-    url: uploaded.url,
+    url: imageUrl,
     path: filename
   }
 })
