@@ -1,80 +1,85 @@
 <template>
   <div class="space-y-2">
-    <div class="flex gap-2">
+    <!-- Display selected ingredient or button to search -->
+    <div v-if="selectedIngredient" class="flex items-center gap-2">
       <UInput
-        v-model="searchQuery"
-        placeholder="Search ingredient or enter manually"
-        :disabled="searching"
-        @keyup.enter="handleSearch"
-        @input="onInput"
+        :model-value="selectedIngredient.name"
+        readonly
         class="flex-1"
       />
       <UButton
-        :disabled="searchQuery.length < 3 || searching"
-        :loading="searching"
-        @click="handleSearch"
-      >
-        Search
-      </UButton>
-    </div>
-
-    <!-- Search results -->
-    <div v-if="searchResults.length > 0" class="border rounded-lg p-2 space-y-2 max-h-60 overflow-y-auto">
-      <div
-        v-for="product in searchResults"
-        :key="product.code"
-        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded cursor-pointer"
-        @click="selectProduct(product)"
-      >
-        <div class="font-semibold">{{ product.name || 'Unknown' }}</div>
-        <div v-if="product.aisle" class="text-sm text-gray-600 dark:text-gray-400">{{ product.aisle }}</div>
-      </div>
-    </div>
-
-    <!-- Manual entry option -->
-    <div v-if="searchQuery && searchResults.length === 0 && !searching" class="text-sm text-gray-600 dark:text-gray-400">
-      <UButton
+        icon="i-heroicons-x-mark"
+        color="neutral"
         variant="ghost"
         size="sm"
-        @click="selectManual"
-      >
-        Use "{{ searchQuery }}" as ingredient name
-      </UButton>
+        @click="clearSelection"
+      />
     </div>
+    <UButton
+      v-else
+      variant="outline"
+      class="w-full justify-start"
+      @click="open = !open"
+    >
+      {{ modelValue || 'Add ingredient...' }}
+    </UButton>
 
-    <!-- Error message -->
-    <UAlert
-      v-if="error"
-      color="error"
-      variant="soft"
-      :title="error"
-    />
-
-    <!-- Rate limit warning -->
-    <UAlert
-      v-if="rateLimited"
-      color="warning"
-      variant="soft"
-      title="Rate limit reached. Please wait a moment before searching again."
-    />
-    
-    <!-- Quota exceeded warning -->
-    <UAlert
-      v-if="quotaExceeded"
-      color="error"
-      variant="soft"
-      title="API quota exceeded. Please check your plan limits."
-    />
+    <!-- Command Palette -->
+    <UCommandPalette
+      :open="open"
+      v-model:search-term="searchTerm"
+      :groups="groups"
+      :fuse="fuseOptions"
+      placeholder="Type ingredient name (min 3 chars) and click Search..."
+      @update:open="open = $event"
+      @update:model-value="handleSelect"
+      @update:search-term="onSearchTermChange"
+    >
+      <template #footer>
+        <div class="p-2 space-y-2 border-t">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <kbd>Esc</kbd>
+              <span>to close</span>
+            </div>
+            <UButton
+              v-if="searchTerm.trim().length >= 3"
+              :loading="searching"
+              size="sm"
+              @click="handleSearch"
+            >
+              Search
+            </UButton>
+          </div>
+          <div v-if="searching" class="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+            <UIcon name="i-heroicons-arrow-path" class="animate-spin" />
+            <span>Searching...</span>
+          </div>
+          <div v-if="error" class="text-xs text-red-600 dark:text-red-400">
+            {{ error }}
+          </div>
+        </div>
+      </template>
+    </UCommandPalette>
   </div>
 </template>
 
 <script setup lang="ts">
+
 interface SpoonacularIngredient {
   id: number
   name: string
   image?: string
   aisle?: string
   [key: string]: any
+}
+
+interface CommandPaletteItem {
+  label: string
+  suffix?: string
+  icon?: string
+  onSelect?: (e: Event) => void
+  ingredient?: SpoonacularIngredient
 }
 
 const props = defineProps<{
@@ -86,13 +91,21 @@ const emit = defineEmits<{
   'select': [ingredient: { name: string; spoonacularIngredientId?: number; spoonacularData?: any }]
 }>()
 
-const searchQuery = ref(props.modelValue || '')
-const searchResults = ref<SpoonacularIngredient[]>([])
+const open = ref(false)
+const searchTerm = ref('')
+const groups = ref<Array<{ id: string; label?: string; items: CommandPaletteItem[]; ignoreFilter?: boolean; postFilter?: (searchTerm: string, items: CommandPaletteItem[]) => CommandPaletteItem[] }>>([])
 const searching = ref(false)
 const error = ref<string | null>(null)
-const rateLimited = ref(false)
-const quotaExceeded = ref(false)
-const debounceTimer = ref<NodeJS.Timeout | null>(null)
+const selectedIngredient = ref<SpoonacularIngredient | null>(null)
+const fuseOptions = {
+  fuseOptions: {
+    ignoreLocation: true,
+    threshold: 0.1,
+    keys: ['label', 'suffix']
+  },
+  resultLimit: 20,
+  matchAllWhenSearchEmpty: false
+}
 
 // Load from localStorage cache
 const loadFromCache = (query: string): SpoonacularIngredient[] | null => {
@@ -127,63 +140,97 @@ const saveToCache = (query: string, results: SpoonacularIngredient[]) => {
   }
 }
 
-const onInput = () => {
-  // Clear previous debounce
-  if (debounceTimer.value) {
-    clearTimeout(debounceTimer.value)
-  }
-
-  // Debounce search (500ms minimum)
-  debounceTimer.value = setTimeout(() => {
-    if (searchQuery.value.length >= 3) {
-      handleSearch()
-    }
-  }, 500)
-}
-
-const handleSearch = async () => {
-  const query = searchQuery.value.trim()
-  
+// Fetch ingredients from API
+const fetchIngredients = async (query: string) => {
   if (query.length < 3) {
+    groups.value = []
     return
   }
 
   // Check cache first
   const cached = loadFromCache(query)
-  if (cached) {
-    searchResults.value = cached
+  if (cached && cached.length > 0) {
+    updateGroups(cached)
     return
   }
 
   searching.value = true
   error.value = null
-  rateLimited.value = false
 
   try {
     const response = await $fetch<SpoonacularIngredient[]>('/api/spoonacular/ingredients/autocomplete', {
       params: { q: query }
     })
     
-    searchResults.value = response || []
-    saveToCache(query, searchResults.value)
+    const results = response || []
+    saveToCache(query, results)
+    updateGroups(results)
   } catch (err: any) {
     if (err.statusCode === 429) {
-      rateLimited.value = true
       error.value = 'Rate limit exceeded. Please wait a moment before searching again.'
     } else if (err.statusCode === 402) {
-      quotaExceeded.value = true
       error.value = 'API quota exceeded. Please check your plan limits.'
     } else {
       error.value = err.message || 'Failed to search ingredients'
     }
-    searchResults.value = []
+    groups.value = []
   } finally {
     searching.value = false
   }
 }
 
-const selectProduct = async (ingredient: SpoonacularIngredient) => {
-  const name = ingredient.name || searchQuery.value
+// Update command palette groups with fetched ingredients
+const updateGroups = (ingredients: SpoonacularIngredient[]) => {
+  const items: CommandPaletteItem[] = ingredients.map((ing) => ({
+    label: ing.name,
+    suffix: ing.aisle || undefined,
+    icon: 'i-heroicons-beaker',
+    ingredient: ing,
+    onSelect: () => handleSelect({
+      label: ing.name,
+      suffix: ing.aisle || undefined,
+      icon: 'i-heroicons-beaker',
+      ingredient: ing
+    })
+  }))
+
+  // Add manual entry option if search term exists
+  if (searchTerm.value.trim() && searchTerm.value.trim().length >= 3) {
+    items.push({
+      label: `Use "${searchTerm.value.trim()}" as ingredient name`,
+      icon: 'i-heroicons-plus-circle',
+      onSelect: () => handleManualEntry(searchTerm.value.trim())
+    })
+  }
+
+  groups.value = [{
+    id: 'ingredients',
+    label: 'Ingredients',
+    items,
+    ignoreFilter: true, // We handle filtering via API
+    postFilter: (term: string, items: CommandPaletteItem[]) => {
+      // Filter out manual entry if it doesn't match
+      return items.filter(item => {
+        if (item.label.includes('Use "') && item.label.includes('" as ingredient name')) {
+          return true // Always show manual entry option
+        }
+        return item.label.toLowerCase().includes(term.toLowerCase())
+      })
+    }
+  }]
+}
+
+// Handle ingredient selection
+const handleSelect = async (item: CommandPaletteItem) => {
+  if (!item.ingredient) {
+    // Manual entry
+    const name = item.label.replace('Use "', '').replace('" as ingredient name', '')
+    handleManualEntry(name)
+    return
+  }
+
+  const ingredient = item.ingredient
+  const name = ingredient.name
   
   // Fetch full ingredient info for nutrition data
   let ingredientData = null
@@ -194,29 +241,65 @@ const selectProduct = async (ingredient: SpoonacularIngredient) => {
     // Continue with basic info if detailed fetch fails
   }
   
+  selectedIngredient.value = ingredient
   emit('select', {
     name,
     spoonacularIngredientId: ingredient.id,
     spoonacularData: ingredientData || ingredient
   })
-  searchResults.value = []
-  searchQuery.value = name
+  emit('update:modelValue', name)
+  open.value = false
+  searchTerm.value = ''
 }
 
-const selectManual = () => {
-  emit('select', {
-    name: searchQuery.value.trim()
-  })
-  searchResults.value = []
+// Handle manual entry
+const handleManualEntry = (name: string) => {
+  selectedIngredient.value = { id: 0, name } as SpoonacularIngredient
+  emit('select', { name: name.trim() })
+  emit('update:modelValue', name.trim())
+  open.value = false
+  searchTerm.value = ''
 }
 
-watch(() => props.modelValue, (newValue) => {
-  if (newValue !== searchQuery.value) {
-    searchQuery.value = newValue || ''
+// Clear selection
+const clearSelection = () => {
+  selectedIngredient.value = null
+  emit('update:modelValue', '')
+}
+
+// Handle explicit search (via search button)
+const handleSearch = () => {
+  const term = searchTerm.value.trim()
+  if (term && term.length >= 3) {
+    fetchIngredients(term)
+  }
+}
+
+// Handle search term changes - don't auto-search, just update
+const onSearchTermChange = (term: string) => {
+  searchTerm.value = term
+  // Clear groups if term is too short
+  if (term.trim().length < 3) {
+    groups.value = []
+  }
+  // Don't auto-fetch - wait for explicit search button click
+}
+
+// Watch for command palette open/close
+watch(() => open.value, (isOpen) => {
+  if (isOpen) {
+    searchTerm.value = ''
+    groups.value = []
   }
 })
 
-watch(searchQuery, (newValue) => {
-  emit('update:modelValue', newValue)
+// Sync with modelValue prop
+watch(() => props.modelValue, (newValue) => {
+  if (newValue && !selectedIngredient.value) {
+    // If we have a value but no selected ingredient, create a manual entry
+    selectedIngredient.value = { id: 0, name: newValue } as SpoonacularIngredient
+  } else if (!newValue) {
+    selectedIngredient.value = null
+  }
 })
 </script>
