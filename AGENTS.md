@@ -30,5 +30,7 @@ Runs on `http://localhost:3000`. NuxtHub auto-provisions PGlite (embedded Postgr
 - **`better-sqlite3` required by `@nuxt/content`**: The `nuxt prepare` postinstall step will interactively prompt to install `better-sqlite3` if it's missing. The update script pre-installs it as a devDependency to avoid blocking on TTY prompts.
 - **PGlite (no external DB needed)**: If no `DATABASE_URL`/`POSTGRES_URL`/`POSTGRESQL_URL` env var is set, NuxtHub uses PGlite (embedded in-process PostgreSQL). This is the default for local dev.
 - **Seeding data**: Use `curl -X POST http://localhost:3000/api/migrate -H "Authorization: Bearer migration-secret"` to import the 4 sample recipes from `content/recipes/` into the database.
-- **Auth is optional for browsing**: GitHub OAuth (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) is only needed for login/recipe creation. The app works for read-only browsing without it.
-- **Pre-existing lint/type errors**: The codebase has ~274 ESLint errors and ~56 TypeScript errors. These are pre-existing and not blocking dev server startup.
+- **Auth is optional for browsing**: GitHub OAuth (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) is only needed for login/recipe creation. The app works for read-only browsing of public recipes without it.
+- **Role-based access**: Users have roles (`viewer`/`editor`/`admin`). Editors can CRUD recipes. Admins can also manage user roles at `/admin/users`. Set `ADMIN_GITHUB_IDS` env var (comma-separated GitHub user IDs) to auto-promote users to admin on login.
+- **Recipe visibility**: Recipes have `visibility` (`public`/`private`). Unauthenticated users see only public recipes. Signed-in users see all.
+- **Pre-existing lint/type errors**: The codebase has ~272 ESLint errors and ~56 TypeScript errors. These are pre-existing and not blocking dev server startup.
