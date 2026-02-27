@@ -16,7 +16,10 @@
       <template #content>
         <div class="p-2 space-y-1">
           <div class="px-3 py-1.5 text-sm text-muted">
-            Role: <UBadge :color="roleBadgeColor" size="xs" variant="subtle">{{ role || 'viewer' }}</UBadge>
+            Role:
+            <UBadge :color="roleBadgeColor" size="xs" variant="subtle">
+              {{ role || 'viewer' }}
+            </UBadge>
           </div>
           <UButton
             v-if="isAdmin"
