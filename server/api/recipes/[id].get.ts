@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  
+
   if (!id) {
     throw createError({
       statusCode: 400,
@@ -21,6 +21,16 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: 'Recipe not found'
     })
+  }
+
+  if (recipe[0].visibility === 'private') {
+    const session = await getOptionalSession(event)
+    if (!session?.user) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Recipe not found'
+      })
+    }
   }
 
   return recipe[0]

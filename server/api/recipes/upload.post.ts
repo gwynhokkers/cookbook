@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  await requireEditor(event)
   
   const { blob, ensureBlob } = await import('hub:blob')
 

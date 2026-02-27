@@ -1,8 +1,8 @@
 import { db, schema } from '../../db'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
-  const session = await requireAuth(event)
+  const session = await requireEditor(event)
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
 
@@ -13,7 +13,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Check if recipe exists and user owns it
   const existing = await db.select()
     .from(schema.recipes)
     .where(eq(schema.recipes.id, id))
@@ -26,23 +25,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Check ownership - allow editing if user owns the recipe OR if recipe has no author (migrated recipes)
-  if (existing[0].authorId !== null && existing[0].authorId !== session.user.id) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden: You can only edit your own recipes'
-    })
-  }
+  const { title, description, imageUrl, date, tags, source, steps, visibility } = body
 
-  const { title, description, imageUrl, date, tags, source, steps } = body
-
-  const updateData: any = {
+  const updateData: Record<string, unknown> = {
     updatedAt: new Date()
   }
-  
-  // If recipe has no author, assign it to the current user on first edit
+
   if (existing[0].authorId === null) {
-    updateData.authorId = session.user.id
+    updateData.authorId = (session.user as Record<string, unknown>).id
   }
 
   if (title !== undefined) updateData.title = title
@@ -52,6 +42,7 @@ export default defineEventHandler(async (event) => {
   if (tags !== undefined) updateData.tags = tags
   if (source !== undefined) updateData.source = source
   if (steps !== undefined) updateData.steps = steps
+  if (visibility !== undefined) updateData.visibility = visibility === 'private' ? 'private' : 'public'
 
   await db.update(schema.recipes)
     .set(updateData)

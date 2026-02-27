@@ -82,6 +82,10 @@ export default defineEventHandler(async (event) => {
       email = primaryEmail?.email || emails[0]?.email || ''
     }
 
+    // Determine if this GitHub user should be auto-promoted to admin
+    const config = useRuntimeConfig(event)
+    const adminGithubIds = (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+
     // Find or create user in database
     const githubId = userResponse.id.toString()
     let user = await db.select().from(schema.users)
@@ -96,16 +100,19 @@ export default defineEventHandler(async (event) => {
         .limit(1)
         .then(rows => rows[0])
 
+      const assignedRole = adminGithubIds.includes(githubId) ? 'admin' : 'viewer'
+
       if (user) {
         // Update existing user with GitHub ID
         await db.update(schema.users)
           .set({
             githubId,
             image: userResponse.avatar_url,
+            role: assignedRole,
             updatedAt: new Date()
           })
           .where(eq(schema.users.id, user.id))
-        user = { ...user, githubId, image: userResponse.avatar_url }
+        user = { ...user, githubId, image: userResponse.avatar_url, role: assignedRole }
       } else {
         // Create new user
         const userId = nanoid()
@@ -115,7 +122,8 @@ export default defineEventHandler(async (event) => {
           email,
           githubId,
           image: userResponse.avatar_url,
-          emailVerified: true
+          emailVerified: true,
+          role: assignedRole
         })
         user = await db.select().from(schema.users)
           .where(eq(schema.users.id, userId))
@@ -123,25 +131,28 @@ export default defineEventHandler(async (event) => {
           .then(rows => rows[0])!
       }
     } else {
-      // Update user info
+      // Update user info; auto-promote to admin if in the list
+      const roleUpdate = adminGithubIds.includes(githubId) ? 'admin' : user.role
       await db.update(schema.users)
         .set({
           name: userResponse.name || userResponse.login,
           email,
           image: userResponse.avatar_url,
+          role: roleUpdate,
           updatedAt: new Date()
         })
         .where(eq(schema.users.id, user.id))
-      user = { ...user, name: userResponse.name || userResponse.login, email, image: userResponse.avatar_url }
+      user = { ...user, name: userResponse.name || userResponse.login, email, image: userResponse.avatar_url, role: roleUpdate }
     }
 
-    // Set user session
+    // Set user session (include role for frontend and API checks)
     await setUserSession(event, {
       user: {
         id: user.id,
         name: user.name || userResponse.login,
         email: user.email,
-        image: user.image
+        image: user.image,
+        role: user.role
       }
     })
 

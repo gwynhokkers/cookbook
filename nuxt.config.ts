@@ -66,7 +66,8 @@ export default defineNuxtConfig({
     },
     spoonacular: {
       apiKey: process.env.SPOON_API_KEY
-    }
+    },
+    adminGithubIds: process.env.ADMIN_GITHUB_IDS || ''
   },
   future: {
     compatibilityVersion: 4

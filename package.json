@@ -33,6 +33,7 @@
     "@nuxt/eslint": "^1.0.1",
     "@nuxt/image": "1.9.0",
     "@tailwindcss/typography": "^0.5.16",
+    "better-sqlite3": "^12.6.2",
     "drizzle-kit": "latest",
     "nuxt": "^4.2.2"
   }

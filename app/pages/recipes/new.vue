@@ -16,15 +16,10 @@
 
 <script setup lang="ts">
 definePageMeta({
-  middleware: 'auth'
+  middleware: 'editor'
 })
 
-const { loggedIn } = useUserSession()
 const router = useRouter()
-
-if (!loggedIn.value) {
-  await navigateTo('/login')
-}
 
 const handleSubmit = async (data: any) => {
   try {

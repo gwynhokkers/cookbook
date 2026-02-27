@@ -11,6 +11,7 @@ export const recipes = pgTable('recipes', {
   tags: jsonb('tags').$type<string[]>().default([]),
   source: text('source'),
   steps: jsonb('steps').$type<Array<{ title: string; content: string }>>().default([]),
+  visibility: text('visibility').notNull().default('public'),
   authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow()
@@ -27,6 +28,7 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
+  role: text('role').notNull().default('viewer'),
   githubId: text('github_id').unique(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow()

@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  await requireEditor(event)
   const recipeId = getRouterParam(event, 'id')
   const body = await readBody(event)
 

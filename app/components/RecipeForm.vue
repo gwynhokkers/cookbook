@@ -87,6 +87,16 @@
       <UInput v-model="state.source" type="url" />
     </UFormField>
 
+    <UFormField label="Visibility" name="visibility">
+      <USelect
+        v-model="state.visibility"
+        :items="[
+          { label: 'Public — visible to everyone', value: 'public' },
+          { label: 'Private — signed-in users only', value: 'private' }
+        ]"
+      />
+    </UFormField>
+
     <UFormField label="Ingredients" name="ingredients">
       <div class="space-y-4">
         <div
@@ -219,6 +229,7 @@ const schema = z.object({
   date: z.string().min(1, 'Date is required'),
   tags: z.array(z.string()).default([]),
   source: z.string().url().optional().or(z.literal('')),
+  visibility: z.enum(['public', 'private']).default('public'),
   ingredients: z.array(z.object({
     amount: z.union([z.string(), z.number()]).transform(val => String(val)),
     unit: z.string(),
@@ -283,6 +294,7 @@ const state = reactive({
   date: props.recipe?.date ? new Date(props.recipe.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
   tags: props.recipe?.tags || [],
   source: props.recipe?.source || '',
+  visibility: (props.recipe?.visibility as 'public' | 'private') || 'public',
   ingredients: [] as Array<{
     amount: string
     unit: string
@@ -432,7 +444,8 @@ const onSubmit = async (event: any) => {
     const submitData = {
       ...formData,
       imageUrl: state.imageUrl,
-      ingredients: state.ingredients // Include structured ingredients
+      visibility: state.visibility,
+      ingredients: state.ingredients
     }
     emit('submit', submitData)
   } finally {

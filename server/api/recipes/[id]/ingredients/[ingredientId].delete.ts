@@ -2,7 +2,7 @@ import { db, schema } from '../../../../db'
 import { eq, and } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  await requireEditor(event)
   const recipeId = getRouterParam(event, 'id')
   const ingredientId = getRouterParam(event, 'ingredientId')
 

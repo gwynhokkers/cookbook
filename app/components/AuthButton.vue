@@ -14,7 +14,20 @@
         class="cursor-pointer"
       />
       <template #content>
-        <div class="p-2">
+        <div class="p-2 space-y-1">
+          <div class="px-3 py-1.5 text-sm text-muted">
+            Role: <UBadge :color="roleBadgeColor" size="xs" variant="subtle">{{ role || 'viewer' }}</UBadge>
+          </div>
+          <UButton
+            v-if="isAdmin"
+            variant="ghost"
+            color="neutral"
+            block
+            to="/admin/users"
+          >
+            <UIcon name="i-heroicons-users" class="mr-2" />
+            Manage Users
+          </UButton>
           <UButton
             variant="ghost"
             color="neutral"
@@ -40,6 +53,13 @@
 
 <script setup lang="ts">
 const { loggedIn, user, clear } = useUserSession()
+const { role, isAdmin } = useUserRole()
+
+const roleBadgeColor = computed(() => {
+  if (role.value === 'admin') return 'error' as const
+  if (role.value === 'editor') return 'primary' as const
+  return 'neutral' as const
+})
 
 const handleSignOut = async () => {
   await clear()
