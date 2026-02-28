@@ -28,6 +28,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'User not found' })
   }
 
+  const config = useRuntimeConfig(event)
+  const envAdminIds = (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  if (existing[0].githubId && envAdminIds.includes(existing[0].githubId)) {
+    throw createError({ statusCode: 403, statusMessage: 'Cannot change role of an environment-defined admin' })
+  }
+
   await db.update(schema.users)
     .set({ role, updatedAt: new Date() })
     .where(eq(schema.users.id, userId))

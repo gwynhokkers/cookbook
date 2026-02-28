@@ -5,7 +5,12 @@ import { manageUsers } from '~~/shared/utils/abilities'
 export default defineEventHandler(async (event) => {
   await authorize(event, manageUsers)
 
-  const users = await db.select({
+  const config = useRuntimeConfig(event)
+  const envAdminIds = new Set(
+    (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  )
+
+  const rows = await db.select({
     id: schema.users.id,
     name: schema.users.name,
     email: schema.users.email,
@@ -17,5 +22,8 @@ export default defineEventHandler(async (event) => {
     .from(schema.users)
     .orderBy(desc(schema.users.createdAt))
 
-  return users
+  return rows.map(u => ({
+    ...u,
+    isEnvAdmin: !!(u.githubId && envAdminIds.has(u.githubId))
+  }))
 })
