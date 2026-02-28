@@ -1,5 +1,6 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
+import { viewRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -23,15 +24,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (recipe[0].visibility === 'private') {
-    const session = await getOptionalSession(event)
-    if (!session?.user) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Recipe not found'
-      })
-    }
-  }
+  await authorize(event, viewRecipe, recipe[0])
 
   return recipe[0]
 })

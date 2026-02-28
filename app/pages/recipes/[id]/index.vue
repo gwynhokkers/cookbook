@@ -27,7 +27,7 @@
           <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
           Private
         </UBadge>
-        <template v-if="isEditor && recipe">
+        <Can v-if="recipe" :ability="editRecipeAbility">
           <UButton
             icon="i-heroicons-pencil"
             variant="ghost"
@@ -43,7 +43,7 @@
           >
             Delete
           </UButton>
-        </template>
+        </Can>
       </div>
     </div>
     <div class="mb-4">
@@ -119,12 +119,11 @@
 
 <script setup lang="ts">
 import type { ContentTocLink } from '@nuxt/ui/runtime/components/content/ContentToc.vue'
+import { editRecipe as editRecipeAbility } from '~~/shared/utils/abilities'
 
 const { seo } = useAppConfig()
 const route = useRoute()
 const router = useRouter()
-const { loggedIn, user } = useUserSession()
-const { isEditor } = useUserRole()
 
 definePageMeta({
   layout: 'recipes'

@@ -24,14 +24,14 @@
 
     <UPageBody>
       <UPageSection>
-        <div v-if="isEditor" class="mb-6">
+        <Can :ability="createRecipe" as="div" class="mb-6">
           <UButton
             icon="i-heroicons-plus"
             to="/recipes/new"
           >
             Create New Recipe
           </UButton>
-        </div>
+        </Can>
         <UPageGrid>
           <UPageCard
             v-for="recipe in recipes"
@@ -67,10 +67,9 @@
 </template>
 
 <script setup lang="ts">
-const { data: recipes } = await useFetch('/api/recipes')
+import { createRecipe } from '~~/shared/utils/abilities'
 
-const { loggedIn } = useUserSession()
-const { isEditor } = useUserRole()
+const { data: recipes } = await useFetch('/api/recipes')
 
 useSeoMeta({
   title: 'CookBook - A collection of recipes by Meg & Gwyn',

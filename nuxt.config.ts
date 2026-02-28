@@ -10,6 +10,7 @@ export default defineNuxtConfig({
     '@nuxt/content',
     '@nuxthub/core',
     'nuxt-auth-utils',
+    'nuxt-authorization',
     '@pinia/nuxt'
   ],
 

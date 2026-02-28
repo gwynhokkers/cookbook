@@ -78,13 +78,13 @@
 </template>
 
 <script setup lang="ts">
+import { manageUsers } from '~~/shared/utils/abilities'
+
 definePageMeta({
   middleware: 'auth'
 })
 
-const { isAdmin } = useUserRole()
-
-if (!isAdmin.value) {
+if (await denies(manageUsers)) {
   await navigateTo('/')
 }
 

@@ -1,9 +1,9 @@
 import { db, schema } from '../../db'
 import { desc, eq } from 'drizzle-orm'
+import { viewAllRecipes } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  const session = await getOptionalSession(event)
-  const isSignedIn = !!session?.user
+  const canViewAll = await allows(event, viewAllRecipes)
 
   const query = db.select({
     id: schema.recipes.id,
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     .from(schema.recipes)
     .orderBy(desc(schema.recipes.date))
 
-  if (!isSignedIn) {
+  if (!canViewAll) {
     return query.where(eq(schema.recipes.visibility, 'public'))
   }
 

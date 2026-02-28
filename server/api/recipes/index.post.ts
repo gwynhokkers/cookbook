@@ -1,8 +1,10 @@
 import { db, schema } from '../../db'
 import { nanoid } from 'nanoid'
+import { createRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  const session = await requireEditor(event)
+  await authorize(event, createRecipe)
+  const session = await requireUserSession(event)
   const body = await readBody(event)
 
   const { title, description, imageUrl, date, tags, source, steps, visibility } = body

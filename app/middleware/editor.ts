@@ -1,12 +1,8 @@
+import { createRecipe } from '~~/shared/utils/abilities'
+
 export default defineNuxtRouteMiddleware(async () => {
-  const { loggedIn } = useUserSession()
-  const { isEditor } = useUserRole()
-
-  if (!loggedIn.value) {
-    return navigateTo('/login')
-  }
-
-  if (!isEditor.value) {
-    return navigateTo('/')
+  if (await denies(createRecipe)) {
+    const { loggedIn } = useUserSession()
+    return navigateTo(loggedIn.value ? '/' : '/login')
   }
 })

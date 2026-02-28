@@ -1,8 +1,10 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
+import { editRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  const session = await requireEditor(event)
+  await authorize(event, editRecipe)
+  const session = await requireUserSession(event)
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
 

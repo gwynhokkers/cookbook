@@ -1,10 +1,11 @@
 import { db, schema } from '../../../db'
 import { eq } from 'drizzle-orm'
+import { manageUsers } from '~~/shared/utils/abilities'
 
 const VALID_ROLES = ['viewer', 'editor', 'admin']
 
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event)
+  await authorize(event, manageUsers)
 
   const userId = getRouterParam(event, 'id')
   const body = await readBody(event)

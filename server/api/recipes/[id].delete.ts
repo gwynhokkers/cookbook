@@ -1,8 +1,9 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
+import { deleteRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  await requireEditor(event)
+  await authorize(event, deleteRecipe)
   const id = getRouterParam(event, 'id')
 
   if (!id) {

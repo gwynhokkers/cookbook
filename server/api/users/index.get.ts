@@ -1,8 +1,9 @@
 import { db, schema } from '../../db'
 import { desc } from 'drizzle-orm'
+import { manageUsers } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event)
+  await authorize(event, manageUsers)
 
   const users = await db.select({
     id: schema.users.id,
