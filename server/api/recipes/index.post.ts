@@ -1,11 +1,13 @@
 import { db, schema } from '../../db'
 import { nanoid } from 'nanoid'
+import { createRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  const session = await requireAuth(event)
+  await authorize(event, createRecipe)
+  const session = await requireUserSession(event)
   const body = await readBody(event)
 
-  const { title, description, imageUrl, date, tags, source, steps } = body
+  const { title, description, imageUrl, date, tags, source, steps, visibility } = body
 
   if (!title) {
     throw createError({
@@ -26,7 +28,8 @@ export default defineEventHandler(async (event) => {
     tags: tags || [],
     source: source || null,
     steps: steps || [],
-    authorId: session.user.id,
+    visibility: visibility === 'private' ? 'private' : 'public',
+    authorId: (session.user as Record<string, unknown>).id as string,
     createdAt: now,
     updatedAt: now
   }

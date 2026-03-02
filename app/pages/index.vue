@@ -24,14 +24,14 @@
 
     <UPageBody>
       <UPageSection>
-        <div v-if="loggedIn" class="mb-6">
+        <Can :ability="createRecipe" as="div" class="mb-6">
           <UButton
             icon="i-heroicons-plus"
             to="/recipes/new"
           >
             Create New Recipe
           </UButton>
-        </div>
+        </Can>
         <UPageGrid>
           <UPageCard
             v-for="recipe in recipes"
@@ -41,13 +41,23 @@
             :description="recipe.description"
           >
             <template #header>
-              <NuxtImg
-                v-if="recipe?.imageUrl"
-                class="aspect-square object-cover"
-                :src="recipe.imageUrl"
-                :alt="recipe.title"
-                provider="blob"
-              />
+              <div class="relative">
+                <NuxtImg
+                  v-if="recipe?.imageUrl"
+                  class="aspect-square object-cover"
+                  :src="recipe.imageUrl"
+                  :alt="recipe.title"
+                  provider="blob"
+                />
+                <UBadge
+                  v-if="recipe.visibility === 'private'"
+                  color="warning"
+                  class="absolute top-2 right-2"
+                >
+                  <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
+                  Private
+                </UBadge>
+              </div>
             </template>
           </UPageCard>
         </UPageGrid>
@@ -57,9 +67,9 @@
 </template>
 
 <script setup lang="ts">
-const { data: recipes } = await useFetch('/api/recipes')
+import { createRecipe } from '~~/shared/utils/abilities'
 
-const { loggedIn } = useUserSession()
+const { data: recipes } = await useFetch('/api/recipes')
 
 useSeoMeta({
   title: 'CookBook - A collection of recipes by Meg & Gwyn',

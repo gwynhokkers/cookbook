@@ -1,5 +1,7 @@
+import { createRecipe } from '~~/shared/utils/abilities'
+
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  await authorize(event, createRecipe)
   
   const { blob, ensureBlob } = await import('hub:blob')
 

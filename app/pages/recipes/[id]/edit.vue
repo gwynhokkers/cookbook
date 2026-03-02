@@ -31,18 +31,13 @@
 
 <script setup lang="ts">
 definePageMeta({
-  middleware: 'auth',
+  middleware: 'editor',
   layout: 'recipes'
 })
 const { seo } = useAppConfig()
 
 const route = useRoute()
 const router = useRouter()
-const { loggedIn } = useUserSession()
-
-if (!loggedIn.value) {
-  await navigateTo('/login')
-}
 
 // Get the recipe ID from route params
 const recipeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id

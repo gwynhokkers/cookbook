@@ -18,22 +18,32 @@
       <h1 class="text-4xl font-serif text-pretty mb-4">
         {{ recipe?.title }}
       </h1>
-      <div v-if="loggedIn && recipe" class="flex gap-2">
-        <UButton
-          icon="i-heroicons-pencil"
-          variant="ghost"
-          :to="`/recipes/${recipe.id}/edit`"
+      <div class="flex gap-2 items-center">
+        <UBadge
+          v-if="recipe?.visibility === 'private'"
+          color="warning"
+          variant="subtle"
         >
-          Edit
-        </UButton>
-        <UButton
-          icon="i-heroicons-trash"
-          variant="ghost"
-          color="error"
-          @click="handleDelete"
-        >
-          Delete
-        </UButton>
+          <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
+          Private
+        </UBadge>
+        <Can v-if="recipe" :ability="editRecipeAbility">
+          <UButton
+            icon="i-heroicons-pencil"
+            variant="ghost"
+            :to="`/recipes/${recipe.id}/edit`"
+          >
+            Edit
+          </UButton>
+          <UButton
+            icon="i-heroicons-trash"
+            variant="ghost"
+            color="error"
+            @click="handleDelete"
+          >
+            Delete
+          </UButton>
+        </Can>
       </div>
     </div>
     <div class="mb-4">
@@ -109,11 +119,11 @@
 
 <script setup lang="ts">
 import type { ContentTocLink } from '@nuxt/ui/runtime/components/content/ContentToc.vue'
+import { editRecipe as editRecipeAbility } from '~~/shared/utils/abilities'
 
 const { seo } = useAppConfig()
 const route = useRoute()
 const router = useRouter()
-const { loggedIn, user } = useUserSession()
 
 definePageMeta({
   layout: 'recipes'

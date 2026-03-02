@@ -1,9 +1,10 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
+import { viewRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  
+
   if (!id) {
     throw createError({
       statusCode: 400,
@@ -22,6 +23,8 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Recipe not found'
     })
   }
+
+  await authorize(event, viewRecipe, recipe[0])
 
   return recipe[0]
 })

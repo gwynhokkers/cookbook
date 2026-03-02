@@ -1,8 +1,9 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
+import { deleteRecipe } from '~~/shared/utils/abilities'
 
 export default defineEventHandler(async (event) => {
-  const session = await requireAuth(event)
+  await authorize(event, deleteRecipe)
   const id = getRouterParam(event, 'id')
 
   if (!id) {
@@ -12,7 +13,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Check if recipe exists and user owns it
   const existing = await db.select()
     .from(schema.recipes)
     .where(eq(schema.recipes.id, id))
@@ -25,21 +25,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (existing[0].authorId !== session.user.id) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden: You can only delete your own recipes'
-    })
-  }
-
-  // Delete associated image from blob storage if exists
   if (existing[0].imageUrl) {
     try {
       // @ts-ignore - hub:blob is a virtual import resolved by Nitro
       const { blob } = await import('hub:blob')
       await blob.delete(existing[0].imageUrl)
     } catch (error) {
-      // Log error but don't fail deletion if image deletion fails
       console.error('Failed to delete image:', error)
     }
   }
