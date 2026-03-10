@@ -1,5 +1,5 @@
 import { db, schema } from '../../db'
-import { ilike, or } from 'drizzle-orm'
+import { like } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event).q as string
@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const results = await db
     .select()
     .from(schema.ingredients)
-    .where(ilike(schema.ingredients.name, searchTerm))
+    .where(like(schema.ingredients.name, searchTerm))
     .limit(20)
 
   return results

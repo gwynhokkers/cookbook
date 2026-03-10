@@ -240,10 +240,9 @@ npx nuxthub deploy
 
 Make sure to set all environment variables in your deployment platform:
 
-- `BETTER_AUTH_SECRET`
-- `BETTER_AUTH_URL` (your production domain)
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
+- `SPOON_API_KEY`
 - `DATABASE_URL` (your production PostgreSQL connection string)
 
 Update your GitHub OAuth App callback URL to match your production domain.
@@ -252,7 +251,6 @@ Update your GitHub OAuth App callback URL to match your production domain.
 
 - **Nuxt 4** - Vue.js framework
 - **NuxtHub** - Backend services (database, blob storage, KV, cache)
-- **Better Auth** - Authentication library
 - **Drizzle ORM** - Type-safe SQL ORM
 - **PostgreSQL** - Database
 - **Nuxt UI** - UI component library

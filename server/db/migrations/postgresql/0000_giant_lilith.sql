@@ -25,6 +25,7 @@ CREATE TABLE "recipes" (
 	"ingredients" jsonb DEFAULT '[]'::jsonb,
 	"steps" jsonb DEFAULT '[]'::jsonb,
 	"author_id" text,
+	"visibility" text DEFAULT 'public' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );

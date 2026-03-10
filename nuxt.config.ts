@@ -7,7 +7,6 @@ export default defineNuxtConfig({
     'nuxt-og-image',
     '@nuxt/image',
     '@nuxt/ui',
-    '@nuxt/content',
     '@nuxthub/core',
     'nuxt-auth-utils',
     'nuxt-authorization',
@@ -15,10 +14,24 @@ export default defineNuxtConfig({
   ],
 
   hub: {
-    db: 'postgresql',
-    blob: true,
-    kv: true,
-    cache: true
+    db: {
+      dialect: 'sqlite',
+      driver: 'd1',
+      connection: { databaseId: process.env.CLOUDFLARE_D1_DATABASE_ID || '' },
+      applyMigrationsDuringBuild: false
+    },
+    kv: {
+      driver: 'cloudflare-kv-binding',
+      namespaceId: process.env.CLOUDFLARE_KV_NAMESPACE_ID || ''
+    },
+    cache: {
+      driver: 'cloudflare-kv-binding',
+      namespaceId: process.env.CLOUDFLARE_CACHE_NAMESPACE_ID || ''
+    },
+    blob: {
+      driver: 'cloudflare-r2',
+      bucketName: process.env.CLOUDFLARE_R2_BUCKET_NAME || ''
+    }
   },
 
   image: {
@@ -36,23 +49,11 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  content: {
-    preview: {
-      api: 'https://api.nuxt.studio'
-    }
-  },
-  //   colorMode: {
-  //     disableTransition: true
-  //   },
-
-  //   ui: {
-  //     icons: ['heroicons', 'simple-icons']
-  //   },
-
-  // Temporary workaround for prerender regression. see https://github.com/nuxt/nuxt/issues/27490
+  // Prerender disabled for D1: DB binding is not available at build time, so routes that
+  // call the API (/, /api/search.json) would fail. They are server-rendered on demand in production.
   routeRules: {
-    '/': { prerender: true },
-    '/api/search.json': { prerender: true }
+    '/': { prerender: false },
+    '/api/search.json': { prerender: false }
   },
   
   runtimeConfig: {
@@ -69,9 +70,6 @@ export default defineNuxtConfig({
       apiKey: process.env.SPOON_API_KEY
     },
     adminGithubIds: process.env.ADMIN_GITHUB_IDS || ''
-  },
-  future: {
-    compatibilityVersion: 4
   },
 
   compatibilityDate: '2024-07-30',
@@ -94,14 +92,6 @@ export default defineNuxtConfig({
       processCSSVariables: true
     }
   },
-
-  // vite: {
-  //   resolve: {
-  //     alias: {
-  //       'unenv/runtime/mock/empty': 'unenv/dist/runtime/mock/empty.mjs'
-  //     }
-  //   }
-  // },
 
   nitro: {
     experimental: {

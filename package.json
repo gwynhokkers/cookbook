@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
+    "patch-wrangler": "node scripts/patch-wrangler-d1-migrations.mjs",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -12,30 +13,29 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.3.14",
-    "@iconify-json/heroicons": "^1.2.2",
-    "@iconify-json/simple-icons": "^1.2.23",
-    "@nuxt/content": "^3.10.0",
+    "@electric-sql/pglite": "^0.3.15",
+    "@iconify-json/heroicons": "^1.2.3",
+    "@iconify-json/simple-icons": "^1.2.72",
     "@nuxt/fonts": "^0.10.3",
-    "@nuxt/ui": "^4.0.0",
+    "@nuxt/ui": "^4.5.0",
     "@nuxthub/core": "latest",
     "@pinia/nuxt": "^0.11.3",
     "drizzle-orm": "latest",
     "gray-matter": "^4.0.3",
-    "nanoid": "^5.0.0",
+    "nanoid": "^5.1.6",
     "nuxt-auth-utils": "latest",
     "nuxt-authorization": "^0.3.5",
-    "nuxt-og-image": "^5.1.3",
+    "nuxt-og-image": "^5.1.13",
     "postgres": "latest",
-    "zod": "^3.22.0"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.26",
-    "@nuxt/eslint": "^1.0.1",
+    "@iconify-json/lucide": "^1.2.95",
+    "@nuxt/eslint": "^1.15.2",
     "@nuxt/image": "1.9.0",
-    "@tailwindcss/typography": "^0.5.16",
+    "@tailwindcss/typography": "^0.5.19",
     "better-sqlite3": "^12.6.2",
     "drizzle-kit": "latest",
-    "nuxt": "^4.2.2"
+    "nuxt": "^4.3.1"
   }
 }

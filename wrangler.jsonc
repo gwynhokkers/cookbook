@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_id": "2ff1dfb8-a2d6-48a4-bd1b-9bd128d034c6",
+      "migrations_table": "_hub_migrations",
+      "migrations_dir": "server/db/migrations/sqlite"
+    }
+  ]
+}
