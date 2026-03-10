@@ -82,15 +82,13 @@ The Pages build will run `wrangler d1 migrations apply`, which needs a Cloudflar
 
 ### Build command (includes D1 migrations)
 
-The app does not run migrations at build time (`applyMigrationsDuringBuild: false`) because D1 is not available during the Nuxt build. Run migrations in the same build step after the build.
-
-With **Cloudflare Pages**, Nitro generates the worker config at `dist/_worker.js/wrangler.json`. Use:
+The app does not run migrations at build time (`applyMigrationsDuringBuild: false`) because D1 is not available during the Nuxt build. Use a single command that installs, builds, then runs the patch script. The patch script finds the wrangler config (e.g. `dist/_worker.js/wrangler.json` on Pages), adds the D1 migrations settings, and runs `wrangler d1 migrations apply DB --remote` with the correct config path:
 
 ```bash
-bun install && bun run build && node scripts/patch-wrangler-d1-migrations.mjs && npx wrangler d1 migrations apply DB --remote --config dist/_worker.js/wrangler.json
+bun install && bun run build && node scripts/patch-wrangler-d1-migrations.mjs
 ```
 
-The patch script finds and patches whichever wrangler config exists (`dist/_worker.js/wrangler.json`, `dist/wrangler.json`, or `.output/wrangler.json`). The migrations command must use the same path; for a standard Pages deploy it is `dist/_worker.js/wrangler.json`.
+Do **not** add a separate `npx wrangler d1 migrations apply ...` step with a hardcoded path (e.g. `dist/wrangler.json`); the config lives at `dist/_worker.js/wrangler.json` on Cloudflare Pages, and the script handles it.
 
 Click **Save** and run a first deployment to confirm the build and migrations succeed.
 
@@ -177,11 +175,11 @@ Prerender is disabled for routes that need the database (`/`, `/api/search.json`
 
 - Ensure `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set in the Pages environment variables.
 - Ensure the token has **D1** and **Workers** permissions.
-- Check that the build command uses the correct config path (`dist/wrangler.json` or `.output/wrangler.json`) after the patch script runs.
+- Use the build command `bun install && bun run build && node scripts/patch-wrangler-d1-migrations.mjs` only; the script runs the migrations with the correct config path. If you added a separate `npx wrangler d1 migrations apply ... --config dist/wrangler.json`, remove it (the file is at `dist/_worker.js/wrangler.json`, not `dist/wrangler.json`).
 
 ### Wrangler config not found
 
-The patch script looks for `dist/_worker.js/wrangler.json`, then `dist/wrangler.json`, then `.output/wrangler.json` after `bun run build`. Cloudflare Pages uses `dist/_worker.js/wrangler.json`. Ensure your build command uses `--config dist/_worker.js/wrangler.json` for the migrations step. If your preset writes the config elsewhere, add that path to the `candidates` array in `scripts/patch-wrangler-d1-migrations.mjs` and use the same path in the `wrangler d1 migrations apply` command.
+The patch script looks for `dist/_worker.js/wrangler.json`, then `dist/wrangler.json`, then `.output/wrangler.json` after `bun run build`. Cloudflare Pages uses `dist/_worker.js/wrangler.json`. If your preset writes the config elsewhere, add that path to the `candidates` array in `scripts/patch-wrangler-d1-migrations.mjs`.
 
 ### Blank or 500 errors after deploy
 
