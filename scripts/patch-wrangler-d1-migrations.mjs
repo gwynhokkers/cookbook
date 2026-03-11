@@ -9,7 +9,7 @@
  *
  * Run after `nuxt build` in CI.
  */
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, cpSync } from 'fs'
+import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join, relative } from 'path'
 import stripJsonComments from 'strip-json-comments'
@@ -103,25 +103,17 @@ config.d1_databases = Array.from(seen.values())
 const db = config.d1_databases.find(e => e.binding === 'DB')
 if (db) {
   db.migrations_table = db.migrations_table || '_hub_migrations'
-  db.migrations_dir = db.migrations_dir || 'server/db/migrations/sqlite'
+  // Nitro emits sqlite migrations to dist/_worker.js/db/migrations/sqlite (no "server/").
+  // When patching build output, always use this path so wrangler finds them (repo wrangler.jsonc
+  // uses server/db/... which is correct for local `wrangler d1 migrations apply --env production`).
+  if (wranglerPath.includes('_worker.js')) {
+    db.migrations_dir = 'db/migrations/sqlite'
+  } else {
+    db.migrations_dir = db.migrations_dir || 'server/db/migrations/sqlite'
+  }
 }
 
 writeFileSync(wranglerPath, JSON.stringify(config, null, 2))
-
-// Wrangler resolves migrations_dir relative to the config file. Copy repo migrations
-// into the config directory so "server/db/migrations/sqlite" exists there.
-if (wranglerPath.includes('_worker.js')) {
-  const configDir = dirname(wranglerPath)
-  const migrationsDest = join(configDir, 'server', 'db', 'migrations', 'sqlite')
-  const migrationsSrc = join(root, 'server', 'db', 'migrations', 'sqlite')
-  if (!existsSync(migrationsSrc)) {
-    console.error('Migrations source not found:', migrationsSrc)
-    process.exit(1)
-  }
-  mkdirSync(migrationsDest, { recursive: true })
-  cpSync(migrationsSrc, migrationsDest, { recursive: true })
-  console.log('Copied D1 migrations into config directory for wrangler')
-}
 
 const deduped = d1.length - config.d1_databases.length
 if (deduped > 0) {
