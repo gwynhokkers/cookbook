@@ -2,17 +2,17 @@
  * Patches the NuxtHub/Nitro-generated wrangler config (in dist/ or .output/).
  * Does NOT touch your repo's wrangler.jsonc — only the build output.
  *
- * 1. Deduplicates D1 bindings (NuxtHub can emit duplicates when CLOUDFLARE_D1_DATABASE_ID is set)
- * 2. Adds migrations_table and migrations_dir so `wrangler d1 migrations apply DB --remote` works
- *
- * Env vars and bindings for the live app come from the Cloudflare Pages dashboard
- * (Settings → Environment variables, Settings → Functions → Bindings), not from any wrangler file.
+ * 1. Deduplicates D1 bindings and adds migrations_table / migrations_dir for `wrangler d1 migrations apply`.
+ * 2. Merges vars and bindings (KV, R2, AI, name, compatibility_date, pages_build_output_dir) from the
+ *    repo's wrangler.jsonc into the generated config so the deployed Worker gets them. Dashboard Secrets
+ *    (GITHUB_CLIENT_SECRET, etc.) are still set in Cloudflare and injected at runtime.
  *
  * Run after `nuxt build` in CI.
  */
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join, relative } from 'path'
+import stripJsonComments from 'strip-json-comments'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
@@ -42,7 +42,6 @@ if (!Array.isArray(d1) || d1.length === 0) {
 }
 
 // Deduplicate: if multiple entries share the same binding name, merge into one.
-// Prefer the entry that already has a non-empty database_id, then layer on migrations config.
 const seen = new Map()
 for (const entry of d1) {
   const name = entry.binding
@@ -50,7 +49,6 @@ for (const entry of d1) {
   if (!existing) {
     seen.set(name, { ...entry })
   } else {
-    // Merge: keep whichever has a real database_id; copy over migrations fields
     if (entry.database_id && entry.database_id !== '') {
       existing.database_id = entry.database_id
     }
@@ -60,11 +58,40 @@ for (const entry of d1) {
 }
 config.d1_databases = Array.from(seen.values())
 
-// Ensure the DB binding has migrations config
 const db = config.d1_databases.find(e => e.binding === 'DB')
 if (db) {
   db.migrations_table = db.migrations_table || '_hub_migrations'
   db.migrations_dir = db.migrations_dir || 'server/db/migrations/sqlite'
+}
+
+// Merge vars and bindings from repo wrangler.jsonc so the deployed Worker gets them (Pages uses the build-output wrangler).
+const repoWranglerPath = join(root, 'wrangler.jsonc')
+if (existsSync(repoWranglerPath)) {
+  let repoConfig
+  try {
+    const raw = readFileSync(repoWranglerPath, 'utf8')
+    repoConfig = JSON.parse(stripJsonComments(raw))
+  } catch (err) {
+    console.warn('Could not parse repo wrangler.jsonc (skipping merge):', err.message)
+  }
+  if (repoConfig) {
+    if (repoConfig.name) config.name = repoConfig.name
+    if (repoConfig.pages_build_output_dir) config.pages_build_output_dir = repoConfig.pages_build_output_dir
+    if (repoConfig.compatibility_date) config.compatibility_date = repoConfig.compatibility_date
+    if (Array.isArray(repoConfig.kv_namespaces) && repoConfig.kv_namespaces.length > 0) {
+      config.kv_namespaces = repoConfig.kv_namespaces
+    }
+    if (Array.isArray(repoConfig.r2_buckets) && repoConfig.r2_buckets.length > 0) {
+      config.r2_buckets = repoConfig.r2_buckets
+    }
+    if (repoConfig.ai && typeof repoConfig.ai === 'object') {
+      config.ai = repoConfig.ai
+    }
+    if (repoConfig.vars && typeof repoConfig.vars === 'object') {
+      config.vars = { ...config.vars, ...repoConfig.vars }
+    }
+    console.log('Merged vars and bindings from wrangler.jsonc into build output')
+  }
 }
 
 writeFileSync(wranglerPath, JSON.stringify(config, null, 2))
@@ -73,7 +100,7 @@ const deduped = d1.length - config.d1_databases.length
 if (deduped > 0) {
   console.log(`Removed ${deduped} duplicate D1 binding(s)`)
 }
-console.log('Patched wrangler config with D1 migrations:', wranglerPath)
+console.log('Patched wrangler config:', wranglerPath)
 
 if (process.env.GITHUB_OUTPUT) {
   appendFileSync(process.env.GITHUB_OUTPUT, `wrangler_config=${relative(root, wranglerPath)}\n`)
