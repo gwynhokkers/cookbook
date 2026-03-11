@@ -29,8 +29,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig(event)
-  const envAdminIds = (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-  if (existing[0].githubId && envAdminIds.includes(existing[0].githubId)) {
+  const envAdminGithubIds = (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  const envAdminGoogleIds = (config.adminGoogleIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  const isEnvAdmin = (existing[0].githubId && envAdminGithubIds.includes(existing[0].githubId)) ||
+    (existing[0].googleId && envAdminGoogleIds.includes(existing[0].googleId))
+  if (isEnvAdmin) {
     throw createError({ statusCode: 403, statusMessage: 'Cannot change role of an environment-defined admin' })
   }
 
@@ -45,6 +48,7 @@ export default defineEventHandler(async (event) => {
     image: schema.users.image,
     role: schema.users.role,
     githubId: schema.users.githubId,
+    googleId: schema.users.googleId,
     createdAt: schema.users.createdAt
   })
     .from(schema.users)

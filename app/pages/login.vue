@@ -10,10 +10,20 @@
         <UButton
           block
           size="lg"
-          @click="signIn"
+          @click="signInWithGitHub"
         >
           <UIcon name="i-simple-icons-github" class="mr-2" />
           Sign in with GitHub
+        </UButton>
+        <UButton
+          block
+          size="lg"
+          color="neutral"
+          variant="outline"
+          @click="signInWithGoogle"
+        >
+          <UIcon name="i-simple-icons-google" class="mr-2" />
+          Sign in with Google
         </UButton>
       </div>
     </UPageBody>
@@ -27,7 +37,11 @@ if (loggedIn.value) {
   await navigateTo('/')
 }
 
-const signIn = () => {
+const signInWithGitHub = () => {
   window.location.href = '/auth/github'
+}
+
+const signInWithGoogle = () => {
+  window.location.href = '/auth/google'
 }
 </script>

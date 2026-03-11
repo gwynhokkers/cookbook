@@ -56,6 +56,7 @@
     
       "vars": {
         "GITHUB_CLIENT_ID": "Ov23li9zogy3L8dMQmwk",
+        "GOOGLE_CLIENT_ID": "589861920149-kbor2op9d7glunji5gljo32u3mk7p45c.apps.googleusercontent.com",
         "ADMIN_GITHUB_IDS": "33204468",
         "SKIP_DEPENDENCY_INSTALL": "true"
       }

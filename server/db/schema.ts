@@ -29,6 +29,7 @@ export const users = sqliteTable('users', {
   image: text('image'),
   role: text('role').notNull().default('viewer'),
   githubId: text('github_id').unique(),
+  googleId: text('google_id').unique(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().defaultNow(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().defaultNow()
 })

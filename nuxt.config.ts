@@ -50,12 +50,17 @@ export default defineNuxtConfig({
       github: {
         clientId: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET
+      },
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET
       }
     },
     spoonacular: {
       apiKey: process.env.SPOON_API_KEY
     },
-    adminGithubIds: process.env.ADMIN_GITHUB_IDS || ''
+    adminGithubIds: process.env.ADMIN_GITHUB_IDS || '',
+    adminGoogleIds: process.env.ADMIN_GOOGLE_IDS || ''
   },
 
   compatibilityDate: '2024-07-30',

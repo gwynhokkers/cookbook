@@ -6,8 +6,11 @@ export default defineEventHandler(async (event) => {
   await authorize(event, manageUsers)
 
   const config = useRuntimeConfig(event)
-  const envAdminIds = new Set(
+  const envAdminGithubIds = new Set(
     (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  )
+  const envAdminGoogleIds = new Set(
+    (config.adminGoogleIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
   )
 
   const rows = await db.select({
@@ -17,6 +20,7 @@ export default defineEventHandler(async (event) => {
     image: schema.users.image,
     role: schema.users.role,
     githubId: schema.users.githubId,
+    googleId: schema.users.googleId,
     createdAt: schema.users.createdAt
   })
     .from(schema.users)
@@ -24,6 +28,6 @@ export default defineEventHandler(async (event) => {
 
   return rows.map(u => ({
     ...u,
-    isEnvAdmin: !!(u.githubId && envAdminIds.has(u.githubId))
+    isEnvAdmin: !!(u.githubId && envAdminGithubIds.has(u.githubId)) || !!(u.googleId && envAdminGoogleIds.has(u.googleId))
   }))
 })
