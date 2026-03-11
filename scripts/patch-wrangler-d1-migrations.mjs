@@ -51,7 +51,7 @@ if (existsSync(repoWranglerPath)) {
     const envBlock = isPreview && repoConfig.env?.preview ? repoConfig.env.preview : repoConfig.env?.production || {}
     const source = { ...repoConfig, ...envBlock }
     if (source.name) config.name = source.name
-    if (source.pages_build_output_dir) config.pages_build_output_dir = source.pages_build_output_dir
+    // Do NOT merge pages_build_output_dir from repo (./dist resolves wrong when config is in dist/_worker.js/).
     if (source.compatibility_date) config.compatibility_date = source.compatibility_date
     if (Array.isArray(source.d1_databases) && source.d1_databases.length > 0) {
       config.d1_databases = source.d1_databases
@@ -70,6 +70,11 @@ if (existsSync(repoWranglerPath)) {
     }
     console.log('Merged vars and bindings from wrangler.jsonc into build output')
   }
+}
+
+// When config lives in dist/_worker.js/, pages_build_output_dir must be ".." so it points to dist (Cloudflare resolves relative to config file).
+if (wranglerPath.includes('_worker.js')) {
+  config.pages_build_output_dir = '..'
 }
 
 // Now ensure we have D1 and run dedupe / migrations config
