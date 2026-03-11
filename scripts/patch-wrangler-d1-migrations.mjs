@@ -35,13 +35,50 @@ try {
   process.exit(1)
 }
 
-const d1 = config.d1_databases
+// Merge from repo wrangler.jsonc FIRST. Nitro's generated config may not include d1_databases/vars;
+// the repo has them under env.production / env.preview.
+const repoWranglerPath = join(root, 'wrangler.jsonc')
+if (existsSync(repoWranglerPath)) {
+  let repoConfig
+  try {
+    const raw = readFileSync(repoWranglerPath, 'utf8')
+    repoConfig = JSON.parse(stripJsonComments(raw))
+  } catch (err) {
+    console.warn('Could not parse repo wrangler.jsonc (skipping merge):', err.message)
+  }
+  if (repoConfig) {
+    const isPreview = process.env.CF_PAGES_BRANCH && process.env.CF_PAGES_PRODUCTION_BRANCH && process.env.CF_PAGES_BRANCH !== process.env.CF_PAGES_PRODUCTION_BRANCH
+    const envBlock = isPreview && repoConfig.env?.preview ? repoConfig.env.preview : repoConfig.env?.production || {}
+    const source = { ...repoConfig, ...envBlock }
+    if (source.name) config.name = source.name
+    if (source.pages_build_output_dir) config.pages_build_output_dir = source.pages_build_output_dir
+    if (source.compatibility_date) config.compatibility_date = source.compatibility_date
+    if (Array.isArray(source.d1_databases) && source.d1_databases.length > 0) {
+      config.d1_databases = source.d1_databases
+    }
+    if (Array.isArray(source.kv_namespaces) && source.kv_namespaces.length > 0) {
+      config.kv_namespaces = source.kv_namespaces
+    }
+    if (Array.isArray(source.r2_buckets) && source.r2_buckets.length > 0) {
+      config.r2_buckets = source.r2_buckets
+    }
+    if (source.ai && typeof source.ai === 'object') {
+      config.ai = source.ai
+    }
+    if (source.vars && typeof source.vars === 'object') {
+      config.vars = { ...config.vars, ...source.vars }
+    }
+    console.log('Merged vars and bindings from wrangler.jsonc into build output')
+  }
+}
+
+// Now ensure we have D1 and run dedupe / migrations config
+let d1 = config.d1_databases
 if (!Array.isArray(d1) || d1.length === 0) {
-  console.error('No d1_databases in wrangler config')
+  console.error('No d1_databases in wrangler config (and none in repo wrangler.jsonc env.production/env.preview).')
   process.exit(1)
 }
 
-// Deduplicate: if multiple entries share the same binding name, merge into one.
 const seen = new Map()
 for (const entry of d1) {
   const name = entry.binding
@@ -62,36 +99,6 @@ const db = config.d1_databases.find(e => e.binding === 'DB')
 if (db) {
   db.migrations_table = db.migrations_table || '_hub_migrations'
   db.migrations_dir = db.migrations_dir || 'server/db/migrations/sqlite'
-}
-
-// Merge vars and bindings from repo wrangler.jsonc so the deployed Worker gets them (Pages uses the build-output wrangler).
-const repoWranglerPath = join(root, 'wrangler.jsonc')
-if (existsSync(repoWranglerPath)) {
-  let repoConfig
-  try {
-    const raw = readFileSync(repoWranglerPath, 'utf8')
-    repoConfig = JSON.parse(stripJsonComments(raw))
-  } catch (err) {
-    console.warn('Could not parse repo wrangler.jsonc (skipping merge):', err.message)
-  }
-  if (repoConfig) {
-    if (repoConfig.name) config.name = repoConfig.name
-    if (repoConfig.pages_build_output_dir) config.pages_build_output_dir = repoConfig.pages_build_output_dir
-    if (repoConfig.compatibility_date) config.compatibility_date = repoConfig.compatibility_date
-    if (Array.isArray(repoConfig.kv_namespaces) && repoConfig.kv_namespaces.length > 0) {
-      config.kv_namespaces = repoConfig.kv_namespaces
-    }
-    if (Array.isArray(repoConfig.r2_buckets) && repoConfig.r2_buckets.length > 0) {
-      config.r2_buckets = repoConfig.r2_buckets
-    }
-    if (repoConfig.ai && typeof repoConfig.ai === 'object') {
-      config.ai = repoConfig.ai
-    }
-    if (repoConfig.vars && typeof repoConfig.vars === 'object') {
-      config.vars = { ...config.vars, ...repoConfig.vars }
-    }
-    console.log('Merged vars and bindings from wrangler.jsonc into build output')
-  }
 }
 
 writeFileSync(wranglerPath, JSON.stringify(config, null, 2))
