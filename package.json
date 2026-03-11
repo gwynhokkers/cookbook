@@ -16,6 +16,7 @@
     "@electric-sql/pglite": "^0.3.15",
     "@iconify-json/heroicons": "^1.2.3",
     "@iconify-json/simple-icons": "^1.2.72",
+    "@libsql/client": "^0.17.0",
     "@nuxt/fonts": "^0.10.3",
     "@nuxt/ui": "^4.5.0",
     "@nuxthub/core": "latest",
