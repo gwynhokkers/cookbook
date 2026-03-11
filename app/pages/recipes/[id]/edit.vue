@@ -1,30 +1,32 @@
 <template>
-  <UPage class="container mx-auto py-8 px-4">
-    <UPageHeader
-      title="Edit Recipe"
-      description="Update your recipe"
-    />
-
+  <UPage>
     <UPageBody>
-      <div v-if="pending">
-        <div class="text-center py-8">
-          <p>Loading recipe...</p>
+      <UPageSection
+        title="Edit Recipe"
+        description="Update your recipe"
+        class="mx-auto w-full max-w-5xl"
+      >
+        <div v-if="pending">
+          <div class="text-center py-8">
+            <p>Loading recipe...</p>
+          </div>
         </div>
-      </div>
-      <div v-else-if="error">
-        <UAlert
-          color="error"
-          title="Error"
-          :description="error.message || 'Failed to load recipe'"
+        <div v-else-if="error">
+          <UAlert
+            color="error"
+            title="Error"
+            :description="error.message || 'Failed to load recipe'"
+          />
+        </div>
+        <RecipeForm
+          v-else-if="recipe"
+          :recipe="recipe"
+          :is-edit="true"
+          :submitting="submitting"
+          @submit="handleSubmit"
+          @cancel="handleCancel"
         />
-      </div>
-      <RecipeForm
-        v-else-if="recipe"
-        :recipe="recipe"
-        :is-edit="true"
-        @submit="handleSubmit"
-        @cancel="handleCancel"
-      />
+      </UPageSection>
     </UPageBody>
   </UPage>
 </template>
@@ -38,6 +40,8 @@ const { seo } = useAppConfig()
 
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
+const submitting = ref(false)
 
 // Get the recipe ID from route params
 const recipeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
@@ -54,6 +58,7 @@ if (error.value) {
 }
 
 const handleSubmit = async (data: any) => {
+  submitting.value = true
   try {
     // Extract ingredients from data
     const ingredients = data.ingredients || []
@@ -207,11 +212,21 @@ const handleSubmit = async (data: any) => {
       })
     }
     
+    toast.add({
+      title: 'Recipe updated',
+      description: 'Your changes were saved successfully.'
+    })
+
     await navigateTo(`/recipes/${recipeId}`)
   } catch (error: any) {
     console.error('Failed to update recipe:', error)
-    // TODO: Show error notification
-    throw error
+    toast.add({
+      color: 'error',
+      title: 'Unable to update recipe',
+      description: error?.data?.statusMessage || error?.message || 'Please try again in a moment.'
+    })
+  } finally {
+    submitting.value = false
   }
 }
 
