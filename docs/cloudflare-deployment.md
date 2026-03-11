@@ -104,8 +104,11 @@ In your Pages project: **Settings** → **Functions** → scroll to **Bindings**
 | **KV Namespace** | `KV` | Select your KV namespace (e.g. `cookbook-kv`) |
 | **KV Namespace** | `CACHE` | Select your cache KV namespace (e.g. `cookbook-cache`) |
 | **R2 Bucket** | `BLOB` | Select your R2 bucket (e.g. `cookbook-blob`) |
+| **Workers AI** | `AI` | (Optional) For recipe-from-image extraction; add if you use that feature |
 
 NuxtHub reads these bindings automatically at runtime. Do **not** pass resource IDs as environment variables — that causes duplicate binding errors.
+
+If you add an API route that calls `extractRecipeFromImage`, pass the request event so the AI binding is used in production: `extractRecipeFromImage(imageBase64, event)`.
 
 ---
 

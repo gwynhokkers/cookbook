@@ -27,12 +27,16 @@ export interface ExtractedRecipe {
  */
 /**
  * Get AI client - works in both local dev (via API) and production (via binding)
- * In NuxtHub v0.10, process.env.AI is available in production
- * For local dev, we create a proxy that calls Cloudflare API directly
+ * In production (Nitro v3), use the Workers AI binding from the request: event.req.runtime.cloudflare.env.AI
+ * For local dev, we create a proxy that calls Cloudflare API directly (or use process.env.AI if set)
  */
-async function getAIClient(): Promise<any> {
-  // Method 1: Try process.env.AI (production/Cloudflare Workers binding)
-  // This is automatically available when deployed to Cloudflare Workers
+async function getAIClient(event?: any): Promise<any> {
+  // Method 1: Request-scoped binding (production Cloudflare Workers / Nitro v3)
+  const binding = event?.req?.runtime?.cloudflare?.env?.AI
+  if (binding) {
+    return binding
+  }
+  // Method 2: process.env.AI (fallback when event not passed or binding not on request)
   if ((process.env as any).AI) {
     return (process.env as any).AI
   }
@@ -160,8 +164,8 @@ async function getAIClient(): Promise<any> {
 }
 
 export async function extractRecipeFromImage(imageBase64: string, event?: any): Promise<ExtractedRecipe> {
-  // Get AI client (works in both local dev and production)
-  const ai = await getAIClient()
+  // Get AI client (binding when event provided in production, else gateway/token for local)
+  const ai = await getAIClient(event)
 
   // Create a detailed prompt for recipe extraction
   // IMPORTANT: The prompt must explicitly instruct the model to analyze the IMAGE
