@@ -14,24 +14,10 @@ export default defineNuxtConfig({
   ],
 
   hub: {
-    db: {
-      dialect: 'sqlite',
-      driver: 'd1',
-      connection: { databaseId: process.env.CLOUDFLARE_D1_DATABASE_ID || '' },
-      applyMigrationsDuringBuild: false
-    },
-    kv: {
-      driver: 'cloudflare-kv-binding',
-      namespaceId: process.env.CLOUDFLARE_KV_NAMESPACE_ID || ''
-    },
-    cache: {
-      driver: 'cloudflare-kv-binding',
-      namespaceId: process.env.CLOUDFLARE_CACHE_NAMESPACE_ID || ''
-    },
-    blob: {
-      driver: 'cloudflare-r2',
-      bucketName: process.env.CLOUDFLARE_R2_BUCKET_NAME || ''
-    }
+    db: 'sqlite',
+    kv: true,
+    cache: true,
+    blob: true
   },
 
   image: {

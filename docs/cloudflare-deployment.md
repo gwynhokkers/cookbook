@@ -94,22 +94,33 @@ The patch script finds and patches whichever wrangler config exists (`dist/_work
 
 Click **Save** and run a first deployment to confirm the build and migrations succeed.
 
+### 4b. Add platform bindings
+
+In your Pages project: **Settings** → **Functions** → scroll to **Bindings**. Add:
+
+| Type | Binding name | Resource |
+|------|-------------|----------|
+| **D1 Database** | `DB` | Select your D1 database (e.g. `cookbook-db`) |
+| **KV Namespace** | `KV` | Select your KV namespace (e.g. `cookbook-kv`) |
+| **KV Namespace** | `CACHE` | Select your cache KV namespace (e.g. `cookbook-cache`) |
+| **R2 Bucket** | `BLOB` | Select your R2 bucket (e.g. `cookbook-blob`) |
+
+NuxtHub reads these bindings automatically at runtime. Do **not** pass resource IDs as environment variables — that causes duplicate binding errors.
+
 ---
 
 ## 5. Set environment variables
 
 In your Pages project: **Settings** → **Environment variables**. Add the following for **Production** (and optionally **Preview** if you use branch deploys).
 
-### Required for build and bindings
+### Required for build (D1 migrations)
 
 | Variable | Description | Encrypted (secret)? |
 |----------|-------------|----------------------|
-| `CLOUDFLARE_D1_DATABASE_ID` | D1 database UUID from step 1.1 | No |
-| `CLOUDFLARE_KV_NAMESPACE_ID` | First KV namespace ID (e.g. cookbook-kv) | No |
-| `CLOUDFLARE_CACHE_NAMESPACE_ID` | Second KV namespace ID (e.g. cookbook-cache) | No |
-| `CLOUDFLARE_R2_BUCKET_NAME` | R2 bucket name (e.g. cookbook-blob) | No |
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID | No |
 | `CLOUDFLARE_API_TOKEN` | API token with Workers, D1, KV, R2 permissions | **Yes** |
+
+> **Note:** D1, KV, R2, and Cache bindings are configured via the Cloudflare Pages dashboard (**Settings → Functions → Bindings**), not environment variables. NuxtHub reads them from the platform at runtime. See step 4b below.
 
 ### Required for the app (runtime)
 

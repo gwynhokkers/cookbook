@@ -1,7 +1,9 @@
 /**
- * Patches the NuxtHub/Nitro-generated wrangler config to add D1 migrations_table
- * and migrations_dir so `wrangler d1 migrations apply DB --remote` can find migrations.
- * Run after `nuxt build` in CI. Supports dist/_worker.js/wrangler.json (Pages), dist/wrangler.json, .output/wrangler.json.
+ * Patches the NuxtHub/Nitro-generated wrangler config:
+ * 1. Deduplicates D1 bindings (NuxtHub can emit duplicates when CLOUDFLARE_D1_DATABASE_ID is set)
+ * 2. Adds migrations_table and migrations_dir so `wrangler d1 migrations apply DB --remote` works
+ *
+ * Run after `nuxt build` in CI.
  */
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -30,16 +32,44 @@ try {
 
 const d1 = config.d1_databases
 if (!Array.isArray(d1) || d1.length === 0) {
-  console.error('No d1_databases in dist/wrangler.json')
+  console.error('No d1_databases in wrangler config')
   process.exit(1)
 }
 
-d1[0].migrations_table = '_hub_migrations'
-// migrations_dir is relative to project root (cwd when wrangler runs)
-d1[0].migrations_dir = 'server/db/migrations/sqlite'
+// Deduplicate: if multiple entries share the same binding name, merge into one.
+// Prefer the entry that already has a non-empty database_id, then layer on migrations config.
+const seen = new Map()
+for (const entry of d1) {
+  const name = entry.binding
+  const existing = seen.get(name)
+  if (!existing) {
+    seen.set(name, { ...entry })
+  } else {
+    // Merge: keep whichever has a real database_id; copy over migrations fields
+    if (entry.database_id && entry.database_id !== '') {
+      existing.database_id = entry.database_id
+    }
+    if (entry.migrations_table) existing.migrations_table = entry.migrations_table
+    if (entry.migrations_dir) existing.migrations_dir = entry.migrations_dir
+  }
+}
+config.d1_databases = Array.from(seen.values())
+
+// Ensure the DB binding has migrations config
+const db = config.d1_databases.find(e => e.binding === 'DB')
+if (db) {
+  db.migrations_table = db.migrations_table || '_hub_migrations'
+  db.migrations_dir = db.migrations_dir || 'server/db/migrations/sqlite'
+}
 
 writeFileSync(wranglerPath, JSON.stringify(config, null, 2))
+
+const deduped = d1.length - config.d1_databases.length
+if (deduped > 0) {
+  console.log(`Removed ${deduped} duplicate D1 binding(s)`)
+}
 console.log('Patched wrangler config with D1 migrations:', wranglerPath)
+
 if (process.env.GITHUB_OUTPUT) {
   appendFileSync(process.env.GITHUB_OUTPUT, `wrangler_config=${relative(root, wranglerPath)}\n`)
 }
