@@ -5,6 +5,72 @@
     @submit="onSubmit"
     class="space-y-8"
   >
+    <div class="rounded-xl border border-primary/30 bg-primary/5 p-5 space-y-4">
+      <div>
+        <h3 class="text-base font-semibold">Scan cookbook page (AI prefill)</h3>
+        <p class="text-sm text-muted">
+          Upload a photo/scan of a recipe page and we will prefill this form automatically.
+        </p>
+      </div>
+
+      <div class="grid gap-3 md:grid-cols-2">
+        <UFormField label="Cookbook page image">
+          <UFileUpload
+            v-model="extractionFile"
+            accept="image/*"
+            label="Choose cookbook photo or scan"
+            description="Best results: one clear recipe per image."
+          />
+        </UFormField>
+
+        <UFormField
+          label="Apply mode"
+          help="Fill empty keeps your existing values. Replace all overwrites title, description, ingredients, and steps."
+        >
+          <USelect
+            v-model="extractionApplyMode"
+            :items="[
+              { label: 'Fill empty fields', value: 'fill-empty' },
+              { label: 'Replace all recipe fields', value: 'replace-all' }
+            ]"
+          />
+        </UFormField>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <UButton
+          type="button"
+          icon="i-heroicons-sparkles"
+          :loading="extractingRecipe"
+          :disabled="!hasExtractionFile || extractingRecipe || submitting || uploadingFile"
+          @click="extractAndPrefill"
+        >
+          Scan and prefill
+        </UButton>
+        <UButton
+          type="button"
+          variant="outline"
+          :disabled="!hasExtractionFile || extractingRecipe"
+          @click="clearExtractionFile"
+        >
+          Clear image
+        </UButton>
+      </div>
+
+      <UAlert
+        v-if="extractionError"
+        color="error"
+        variant="soft"
+        :title="extractionError"
+      />
+      <UAlert
+        v-if="extractionSummary"
+        color="success"
+        variant="soft"
+        :title="extractionSummary"
+      />
+    </div>
+
     <div class="rounded-xl border border-default p-5 space-y-5">
       <div>
         <h3 class="text-base font-semibold">Recipe details</h3>
@@ -420,6 +486,25 @@ const createEmptyStep = () => ({
   content: ''
 })
 
+type ExtractionApplyMode = 'fill-empty' | 'replace-all'
+
+interface ExtractedRecipeResponse {
+  title?: string
+  description?: string
+  ingredients?: Array<{
+    amount?: string
+    unit?: string
+    ingredientName?: string
+    notes?: string
+  }>
+  steps?: Array<{
+    title?: string
+    content?: string
+  }>
+  tags?: string[]
+  source?: string
+}
+
 // Load recipe ingredients if editing
 const loadRecipeIngredients = async () => {
   if (props.recipe?.id) {
@@ -493,7 +578,21 @@ const newTag = ref('')
 const selectedFile = ref<any>(null)
 const uploadingFile = ref(false)
 const uploadError = ref<string | null>(null)
+const extractionFile = ref<any>(null)
+const extractionApplyMode = ref<ExtractionApplyMode>(props.isEdit ? 'fill-empty' : 'replace-all')
+const extractingRecipe = ref(false)
+const extractionError = ref<string | null>(null)
+const extractionSummary = ref<string | null>(null)
 const submitting = computed(() => Boolean(props.submitting))
+const hasExtractionFile = computed(() => {
+  if (!extractionFile.value) {
+    return false
+  }
+  const files = extractionFile.value instanceof FileList
+    ? Array.from(extractionFile.value)
+    : (Array.isArray(extractionFile.value) ? extractionFile.value : [extractionFile.value])
+  return files.length > 0
+})
 const isSubmitDisabled = computed(() => {
   return uploadingFile.value || submitting.value || !state.title.trim() || !state.date
 })
@@ -599,6 +698,205 @@ const moveStep = (from: number, to: number) => {
     return
   }
   state.steps.splice(to, 0, item)
+}
+
+const normalizeUnit = (unit: string) => {
+  const normalized = unit.trim().toLowerCase()
+  const unitMap: Record<string, string> = {
+    cup: 'cups',
+    cups: 'cups',
+    tbsp: 'tbsp',
+    tablespoon: 'tbsp',
+    tablespoons: 'tbsp',
+    tsp: 'tsp',
+    teaspoon: 'tsp',
+    teaspoons: 'tsp',
+    gram: 'grams',
+    grams: 'grams',
+    g: 'grams',
+    kilogram: 'kg',
+    kilograms: 'kg',
+    kg: 'kg',
+    ounce: 'oz',
+    ounces: 'oz',
+    oz: 'oz',
+    pound: 'lb',
+    pounds: 'lb',
+    lb: 'lb',
+    ml: 'ml',
+    milliliter: 'ml',
+    milliliters: 'ml',
+    l: 'l',
+    liter: 'l',
+    liters: 'l',
+    litre: 'l',
+    litres: 'l',
+    piece: 'pieces',
+    pieces: 'pieces',
+    clove: 'pieces',
+    cloves: 'pieces'
+  }
+  return unitMap[normalized] || 'pieces'
+}
+
+const hasMeaningfulIngredients = () => {
+  return state.ingredients.some(ingredient =>
+    Boolean(ingredient.ingredientName.trim() || ingredient.amount.trim() || (ingredient.notes || '').trim())
+  )
+}
+
+const hasMeaningfulSteps = () => {
+  return state.steps.some(step => Boolean(step.title.trim() || step.content.trim()))
+}
+
+const toExtractedIngredients = (ingredients: ExtractedRecipeResponse['ingredients']) => {
+  if (!Array.isArray(ingredients) || ingredients.length === 0) {
+    return []
+  }
+
+  return ingredients
+    .map((ingredient) => ({
+      rowId: createRowId('ingredient'),
+      amount: String(ingredient.amount || '').trim(),
+      unit: normalizeUnit(String(ingredient.unit || 'pieces')),
+      ingredientName: String(ingredient.ingredientName || '').trim(),
+      notes: String(ingredient.notes || '').trim()
+    }))
+    .filter(ingredient => ingredient.ingredientName)
+}
+
+const toExtractedSteps = (steps: ExtractedRecipeResponse['steps']) => {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return []
+  }
+
+  return steps
+    .map((step, index) => ({
+      rowId: createRowId('step'),
+      title: String(step.title || `Step ${index + 1}`).trim(),
+      content: String(step.content || '').trim()
+    }))
+    .filter(step => step.content)
+}
+
+const mergeExtractedRecipe = (extracted: ExtractedRecipeResponse, mode: ExtractionApplyMode) => {
+  if (mode === 'replace-all') {
+    if (extracted.title) state.title = extracted.title.trim()
+    if (extracted.description !== undefined) state.description = String(extracted.description || '').trim()
+    if (extracted.source !== undefined) state.source = String(extracted.source || '').trim()
+  } else {
+    if (!state.title.trim() && extracted.title) state.title = extracted.title.trim()
+    if (!state.description.trim() && extracted.description) state.description = extracted.description.trim()
+    if (!state.source.trim() && extracted.source) state.source = extracted.source.trim()
+  }
+
+  if (Array.isArray(extracted.tags) && extracted.tags.length > 0) {
+    const mergedTags = [...state.tags]
+    for (const tag of extracted.tags) {
+      const normalizedTag = String(tag || '').trim().replace(/\s+/g, ' ')
+      if (!normalizedTag) continue
+      if (!mergedTags.some(existing => existing.toLowerCase() === normalizedTag.toLowerCase())) {
+        mergedTags.push(normalizedTag)
+      }
+    }
+    state.tags = mergedTags
+  }
+
+  const extractedIngredients = toExtractedIngredients(extracted.ingredients)
+  const extractedSteps = toExtractedSteps(extracted.steps)
+
+  if (mode === 'replace-all') {
+    state.ingredients = extractedIngredients.length > 0 ? extractedIngredients : [createEmptyIngredient()]
+    state.steps = extractedSteps.length > 0 ? extractedSteps : [createEmptyStep()]
+  } else {
+    if (extractedIngredients.length > 0) {
+      if (!hasMeaningfulIngredients()) {
+        state.ingredients = extractedIngredients
+      } else {
+        state.ingredients = [...state.ingredients, ...extractedIngredients]
+      }
+    }
+    if (extractedSteps.length > 0) {
+      if (!hasMeaningfulSteps()) {
+        state.steps = extractedSteps
+      } else {
+        state.steps = [...state.steps, ...extractedSteps]
+      }
+    }
+  }
+
+  if (state.ingredients.length === 0) {
+    state.ingredients = [createEmptyIngredient()]
+  }
+  if (state.steps.length === 0) {
+    state.steps = [createEmptyStep()]
+  }
+}
+
+const getFirstFile = (files: unknown) => {
+  if (!files) {
+    return null
+  }
+
+  const fileArray = files instanceof FileList
+    ? Array.from(files)
+    : (Array.isArray(files) ? files : [files])
+
+  return fileArray[0] || null
+}
+
+const fileToBase64 = async (file: File): Promise<string> => {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Unable to read image'))
+    reader.readAsDataURL(file)
+  })
+}
+
+const clearExtractionFile = () => {
+  extractionFile.value = null
+}
+
+const extractAndPrefill = async () => {
+  extractionError.value = null
+  extractionSummary.value = null
+
+  const file = getFirstFile(extractionFile.value)
+  if (!(file instanceof File)) {
+    extractionError.value = 'Please select an image to scan.'
+    return
+  }
+
+  extractingRecipe.value = true
+
+  try {
+    const imageBase64 = await fileToBase64(file)
+    const extracted = await $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
+      method: 'POST',
+      body: { imageBase64 }
+    })
+
+    mergeExtractedRecipe(extracted, extractionApplyMode.value)
+
+    const extractedIngredientCount = Array.isArray(extracted.ingredients) ? extracted.ingredients.length : 0
+    const extractedStepCount = Array.isArray(extracted.steps) ? extracted.steps.length : 0
+    extractionSummary.value = `Prefill complete: ${extractedIngredientCount} ingredients and ${extractedStepCount} steps extracted.`
+    extractionFile.value = null
+  } catch (error: any) {
+    const rawMessage = error?.data?.statusMessage || error?.message || ''
+    if (rawMessage.includes('AI binding not available') || rawMessage.includes('AI Gateway ID not configured')) {
+      extractionError.value = 'AI scanning is not configured in this environment yet. Add the Cloudflare AI env vars, then retry.'
+    } else if (rawMessage.includes('rate limit exceeded')) {
+      extractionError.value = 'AI scanning is temporarily rate-limited. Please wait a moment and try again.'
+    } else if (rawMessage.includes('quota exceeded')) {
+      extractionError.value = 'AI scanning quota is exhausted. Please check your Cloudflare plan and limits.'
+    } else {
+      extractionError.value = rawMessage || 'Unable to extract recipe from image.'
+    }
+  } finally {
+    extractingRecipe.value = false
+  }
 }
 
 // Watch for file selection changes and upload automatically
