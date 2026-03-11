@@ -28,6 +28,7 @@
 
   "vars": {
     "GITHUB_CLIENT_ID": "Ov23li9zogy3L8dMQmwk",
-    "ADMIN_GITHUB_IDS": "33204468"
+    "ADMIN_GITHUB_IDS": "33204468",
+    "SKIP_DEPENDENCIES_INSTALL": "true"
   }
 }
