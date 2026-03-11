@@ -38,14 +38,26 @@ Create the following resources in the [Cloudflare dashboard](https://dash.cloudf
 
 ---
 
-## 2. Configure the project for your D1 database (optional, for local migrations)
+## 2. Wrangler config is the source of truth
 
-If you want to run D1 migrations from your machine (e.g. `npx wrangler d1 migrations apply DB --remote`), set your D1 database ID in the repo:
+This project uses a **Wrangler configuration file** (`wrangler.jsonc` in the repo root) with `pages_build_output_dir`. That makes the file the **source of truth** for your Pages project: [you cannot edit bindings or non-secret environment variables in the dashboard](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth). The dashboard will show: *"Environment variables for this project are being managed through wrangler. Only Secrets (encrypted variables) can be managed via the Dashboard."*
+
+- **Bindings** (D1, KV, R2, Workers AI) and **non-secret vars** → define them in `wrangler.jsonc`.
+- **Secrets** (encrypted values) → set them in **Settings → Environment variables** in the dashboard; only these remain editable there.
+
+If bindings or vars “disappear”, it’s usually because the deployed config was a minimal generated wrangler (e.g. from the build output) instead of this full `wrangler.jsonc`. Commit and deploy with the complete `wrangler.jsonc` from this repo so Pages uses it.
+
+### Fill in `wrangler.jsonc`
 
 1. Open `wrangler.jsonc` in the project root.
-2. Replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` with your D1 **Database ID** (the UUID from step 1.1).
-
-If you only deploy via Cloudflare Pages and run migrations in the build (see below), you can leave the placeholder; the build uses environment variables instead.
+2. Replace every placeholder:
+   - **KV / CACHE** → `id` with your KV namespace IDs (from Workers & Pages → KV).
+   - **BLOB** → `bucket_name` with your R2 bucket name (e.g. `cookbook-blob`).
+   - **vars.GITHUB_CLIENT_ID** → your GitHub OAuth Client ID.
+   - **vars.BETTER_AUTH_URL** → your production URL (e.g. `https://cookbook.megwyn.co.uk`).
+   - **vars.ADMIN_GITHUB_IDS** → optional; comma-separated GitHub user IDs for admin.
+3. D1 `database_id` is already set; change it only if you use a different D1 database.
+4. If you don’t use Workers AI (recipe-from-image), you can remove the `"ai"` block.
 
 ---
 
@@ -94,65 +106,49 @@ The patch script finds and patches whichever wrangler config exists (`dist/_work
 
 Click **Save** and run a first deployment to confirm the build and migrations succeed.
 
-### 4b. Add platform bindings
+### 4b. Bindings and vars (in wrangler.jsonc)
 
-In your Pages project: **Settings** → **Functions** → scroll to **Bindings**. Add:
-
-| Type | Binding name | Resource |
-|------|-------------|----------|
-| **D1 Database** | `DB` | Select your D1 database (e.g. `cookbook-db`) |
-| **KV Namespace** | `KV` | Select your KV namespace (e.g. `cookbook-kv`) |
-| **KV Namespace** | `CACHE` | Select your cache KV namespace (e.g. `cookbook-cache`) |
-| **R2 Bucket** | `BLOB` | Select your R2 bucket (e.g. `cookbook-blob`) |
-| **Workers AI** | `AI` | (Optional) For recipe-from-image extraction; add if you use that feature |
-
-NuxtHub reads these bindings automatically at runtime. Do **not** pass resource IDs as environment variables — that causes duplicate binding errors.
-
-If you add an API route that calls `extractRecipeFromImage`, pass the request event so the AI binding is used in production: `extractRecipeFromImage(imageBase64, event)`.
+Bindings and non-secret vars are defined in **`wrangler.jsonc`** (see step 2). Ensure every placeholder in that file is replaced with your real IDs and values. NuxtHub reads the bindings at runtime. If you add an API route that calls `extractRecipeFromImage`, pass the request event so the AI binding is used: `extractRecipeFromImage(imageBase64, event)`.
 
 ---
 
-## 5. Set environment variables
+## 5. Set Secrets (dashboard) and build vars
 
-In your Pages project: **Settings** → **Environment variables**. Add the following for **Production** (and optionally **Preview** if you use branch deploys).
+Because `wrangler.jsonc` is the source of truth, **non-secret** runtime vars (`BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, `ADMIN_GITHUB_IDS`) live in **`wrangler.jsonc` under `vars`** (see step 2). Only **Secrets** and **build-time** vars are set in the dashboard.
 
-### Required for build (D1 migrations)
+In your Pages project: **Settings** → **Environment variables**. Add:
 
-| Variable | Description | Encrypted (secret)? |
-|----------|-------------|----------------------|
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID | No |
-| `CLOUDFLARE_API_TOKEN` | API token with Workers, D1, KV, R2 permissions | **Yes** |
+### Build (migrations)
 
-> **Note:** D1, KV, R2, and Cache bindings are configured via the Cloudflare Pages dashboard (**Settings → Functions → Bindings**), not environment variables. NuxtHub reads them from the platform at runtime. See step 4b below.
+| Variable | Encrypted? | Description |
+|----------|------------|-------------|
+| `CLOUDFLARE_ACCOUNT_ID` | No | Your Cloudflare account ID |
+| `CLOUDFLARE_API_TOKEN` | **Yes** | API token with Workers, D1, KV, R2 permissions |
 
-### Required for the app (runtime)
+### Runtime (Secrets only — these are the only runtime vars you can set in the dashboard)
 
-| Variable | Description | Encrypted? |
-|----------|-------------|------------|
-| `BETTER_AUTH_SECRET` | Strong random secret (e.g. 32+ characters) | **Yes** |
-| `BETTER_AUTH_URL` | Production URL (e.g. `https://your-project.pages.dev`) | No |
-| `NUXT_SESSION_PASSWORD` | Session encryption password (min 32 characters) | **Yes** |
-| `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | No |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth App Client Secret | **Yes** |
+| Variable | Encrypted? | Description |
+|----------|------------|-------------|
+| `NUXT_SESSION_PASSWORD` | **Yes** | Session encryption password (min 32 characters) |
+| `GITHUB_CLIENT_SECRET` | **Yes** | GitHub OAuth App Client Secret |
 
-### Optional
+### Optional Secrets
 
 | Variable | Description |
 |----------|-------------|
-| `SPOON_API_KEY` | Spoonacular API key (for nutrition/ingredient features) |
-| `ADMIN_GITHUB_IDS` | Comma-separated GitHub user IDs for admin users |
+| `SPOON_API_KEY` | Spoonacular API key (nutrition/ingredient features) |
 | `MIGRATION_SECRET` | Secret for the `/api/migrate` content-import endpoint |
 
-After adding variables, trigger a new deployment (e.g. **Deployments** → **Retry deployment** or push a commit) so the build and runtime use them.
+After adding, trigger a new deployment so the build and runtime use them.
 
 ---
 
 ## 6. Update GitHub OAuth for production
 
 1. Open [GitHub → Developer settings → OAuth Apps](https://github.com/settings/developers) and select your CookBook OAuth App (or create one).
-2. Set **Homepage URL** to your production URL (e.g. `https://your-project.pages.dev`).
-3. Set **Authorization callback URL** to `https://your-project.pages.dev/api/auth/callback/github` (replace with your actual Pages URL).
-4. Save. Ensure `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in Cloudflare match this app.
+2. Set **Homepage URL** to your production URL (e.g. `https://cookbook.megwyn.co.uk`).
+3. Set **Authorization callback URL** to `https://your-domain/auth/github` (e.g. `https://cookbook.megwyn.co.uk/auth/github` — this app uses `/auth/github`, not `/api/auth/callback/github`).
+4. Save. Ensure `GITHUB_CLIENT_ID` in `wrangler.jsonc` and `GITHUB_CLIENT_SECRET` (Secret) in the dashboard match this app.
 
 ---
 
@@ -181,6 +177,19 @@ After adding variables, trigger a new deployment (e.g. **Deployments** → **Ret
 
 ---
 
+## If your variables or bindings keep disappearing
+
+When your project uses a Wrangler file with `pages_build_output_dir`, that file is the [source of truth](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth). The dashboard will show: *"Environment variables for this project are being managed through wrangler. Only Secrets (encrypted variables) can be managed via the Dashboard."*
+
+If bindings or non-secret vars seemed to “disappear”, it’s usually because Pages was using a **minimal generated** wrangler config (e.g. from the build output) instead of your repo’s full `wrangler.jsonc`. Fix it by:
+
+1. Ensuring **`wrangler.jsonc`** in the repo root contains all bindings (D1, KV, CACHE, R2, AI) and all non-secret **vars** (see step 2).
+2. Replacing every placeholder in that file with your real resource IDs and values.
+3. Setting **Secrets** in **Settings** → **Environment variables** (only encrypted vars are editable there).
+4. Deploying again (push a commit or **Retry deployment**) so Pages picks up the repo’s `wrangler.jsonc`.
+
+---
+
 ## Troubleshooting
 
 ### Build fails with "DB binding not found"
@@ -199,20 +208,20 @@ The patch script looks for `dist/_worker.js/wrangler.json`, then `dist/wrangler.
 
 ### Blank or 500 errors after deploy
 
-- Confirm all runtime environment variables are set (especially `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NUXT_SESSION_PASSWORD`, and GitHub OAuth vars).
-- Check the **Functions** or **Deployments** logs in the Pages dashboard for runtime errors.
-- Ensure the GitHub OAuth callback URL exactly matches your deployed URL (including `https://` and no trailing slash except as required).
+- Confirm `wrangler.jsonc` has no placeholders left and Secrets are set in the dashboard (`NUXT_SESSION_PASSWORD`, `GITHUB_CLIENT_SECRET`).
+- Check **Functions** or **Deployments** logs in the Pages dashboard for runtime errors.
+- Ensure the GitHub OAuth callback URL is exactly `https://your-domain/auth/github` (no trailing slash).
 
 ---
 
 ## Summary checklist
 
-- [ ] D1 database created; ID copied
-- [ ] Two KV namespaces created; IDs copied
-- [ ] R2 bucket created; name noted
-- [ ] API token created with D1, Workers, KV, R2 permissions
+- [ ] D1 database created; ID in `wrangler.jsonc`
+- [ ] Two KV namespaces created; IDs in `wrangler.jsonc`
+- [ ] R2 bucket created; name in `wrangler.jsonc`
+- [ ] API token created; `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in dashboard (build)
 - [ ] Pages project connected to GitHub; build command includes migrations
-- [ ] All environment variables set (build and runtime)
-- [ ] GitHub OAuth App callback URL updated to production URL
+- [ ] All placeholders in `wrangler.jsonc` replaced; Secrets set in dashboard
+- [ ] GitHub OAuth App callback URL set to `https://your-domain/auth/github`
 - [ ] First deployment successful; app and sign-in tested
-- [ ] (Optional) Custom domain and BETTER_AUTH_URL updated
+- [ ] (Optional) Custom domain and `BETTER_AUTH_URL` in `wrangler.jsonc` updated

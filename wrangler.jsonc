@@ -1,5 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cookbook",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2024-07-30",
+
   "d1_databases": [
     {
       "binding": "DB",
@@ -7,5 +11,23 @@
       "migrations_table": "_hub_migrations",
       "migrations_dir": "server/db/migrations/sqlite"
     }
-  ]
+  ],
+
+  "kv_namespaces": [
+    { "binding": "KV", "id": "74f173ffec244f5da22f854ef578c58b" },
+    { "binding": "CACHE", "id": "842f84ffc4764cc4bb18808f8fbecf86" }
+  ],
+
+  "r2_buckets": [
+    { "binding": "BLOB", "bucket_name": "cookbook-blob" }
+  ],
+
+  "ai": {
+    "binding": "AI"
+  },
+
+  "vars": {
+    "GITHUB_CLIENT_ID": "Ov23li9zogy3L8dMQmwk",
+    "ADMIN_GITHUB_IDS": "33204468"
+  }
 }

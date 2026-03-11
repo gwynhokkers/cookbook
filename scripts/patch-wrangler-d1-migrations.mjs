@@ -1,7 +1,12 @@
 /**
- * Patches the NuxtHub/Nitro-generated wrangler config:
+ * Patches the NuxtHub/Nitro-generated wrangler config (in dist/ or .output/).
+ * Does NOT touch your repo's wrangler.jsonc — only the build output.
+ *
  * 1. Deduplicates D1 bindings (NuxtHub can emit duplicates when CLOUDFLARE_D1_DATABASE_ID is set)
  * 2. Adds migrations_table and migrations_dir so `wrangler d1 migrations apply DB --remote` works
+ *
+ * Env vars and bindings for the live app come from the Cloudflare Pages dashboard
+ * (Settings → Environment variables, Settings → Functions → Bindings), not from any wrangler file.
  *
  * Run after `nuxt build` in CI.
  */
