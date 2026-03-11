@@ -7,6 +7,7 @@
 
     <UPageBody>
       <RecipeForm
+        :submitting="submitting"
         @submit="handleSubmit"
         @cancel="handleCancel"
       />
@@ -20,8 +21,11 @@ definePageMeta({
 })
 
 const router = useRouter()
+const toast = useToast()
+const submitting = ref(false)
 
 const handleSubmit = async (data: any) => {
+  submitting.value = true
   try {
     // Extract ingredients from data
     const ingredients = data.ingredients || []
@@ -129,10 +133,21 @@ const handleSubmit = async (data: any) => {
       })
     }
     
+    toast.add({
+      title: 'Recipe created',
+      description: `"${recipe.title}" was added successfully.`
+    })
+
     await navigateTo(`/recipes/${recipe.id}`)
   } catch (error: any) {
     console.error('Failed to create recipe:', error)
-    // TODO: Show error notification
+    toast.add({
+      color: 'error',
+      title: 'Unable to create recipe',
+      description: error?.data?.statusMessage || error?.message || 'Please check the form and try again.'
+    })
+  } finally {
+    submitting.value = false
   }
 }
 
