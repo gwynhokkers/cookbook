@@ -9,13 +9,26 @@ export default defineEventHandler(async (event) => {
   await authorize(event, createRecipe)
   await requireUserSession(event)
 
-  const body = await readBody<ExtractRequestBody>(event)
-  const imageBase64 = body?.imageBase64
+  let imageBase64: string | undefined
+  const contentType = getHeader(event, 'content-type') || ''
 
-  if (!imageBase64 || typeof imageBase64 !== 'string') {
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await readMultipartFormData(event)
+    const imagePart = formData?.find(part => part.name === 'image')
+    if (imagePart?.data && imagePart.data.length > 0) {
+      imageBase64 = imagePart.data.toString('base64')
+    }
+  } else {
+    const body = await readBody<ExtractRequestBody>(event)
+    if (typeof body?.imageBase64 === 'string') {
+      imageBase64 = body.imageBase64
+    }
+  }
+
+  if (!imageBase64) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Image data is required'
+      statusMessage: 'Image file is required'
     })
   }
 
