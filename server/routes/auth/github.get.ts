@@ -182,6 +182,8 @@ export default defineEventHandler(async (event) => {
     return sendRedirect(event, '/')
   } catch (error: unknown) {
     const err = error as { message?: string; statusCode?: number; data?: unknown }
+    const rawMessage = err?.message ?? (typeof error === 'object' && error !== null && 'message' in error ? String((error as { message: unknown }).message) : String(error))
+    const sanitised = rawMessage.replace(/\b(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[a-zA-Z0-9_]+/g, '[REDACTED]').slice(0, 200)
     console.error('[auth/github] OAuth error', { lastStep, message: err?.message, statusCode: err?.statusCode, data: err?.data })
     // #region agent log
     fetch('http://127.0.0.1:7244/ingest/836a5a53-c1a4-4537-b667-aa0ce7fbd95c', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e00b61' }, body: JSON.stringify({ sessionId: 'e00b61', runId: 'auth', hypothesisId: 'H2-H5', location: 'auth/github.get.ts:catch', message: 'auth failed', data: { lastStep, errorMessage: err?.message }, timestamp: Date.now() }) }).catch(() => {})
@@ -189,9 +191,16 @@ export default defineEventHandler(async (event) => {
     if (err?.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
       throw error
     }
+    setResponseHeaders(event, {
+      'X-Auth-Failure-Step': lastStep,
+      'X-Auth-Failure-Reason': sanitised
+    })
+    const statusMessage = lastStep === 'db' && rawMessage.includes('Failed query')
+      ? 'Failed to authenticate with GitHub (database error: ensure D1 migrations were applied — see docs/cloudflare-deployment.md)'
+      : 'Failed to authenticate with GitHub'
     throw createError({
       statusCode: 500,
-      statusMessage: 'Failed to authenticate with GitHub'
+      statusMessage
     })
   }
 })

@@ -9,7 +9,7 @@
  *
  * Run after `nuxt build` in CI.
  */
-import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, cpSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join, relative } from 'path'
 import stripJsonComments from 'strip-json-comments'
@@ -107,6 +107,21 @@ if (db) {
 }
 
 writeFileSync(wranglerPath, JSON.stringify(config, null, 2))
+
+// Wrangler resolves migrations_dir relative to the config file. Copy repo migrations
+// into the config directory so "server/db/migrations/sqlite" exists there.
+if (wranglerPath.includes('_worker.js')) {
+  const configDir = dirname(wranglerPath)
+  const migrationsDest = join(configDir, 'server', 'db', 'migrations', 'sqlite')
+  const migrationsSrc = join(root, 'server', 'db', 'migrations', 'sqlite')
+  if (!existsSync(migrationsSrc)) {
+    console.error('Migrations source not found:', migrationsSrc)
+    process.exit(1)
+  }
+  mkdirSync(migrationsDest, { recursive: true })
+  cpSync(migrationsSrc, migrationsDest, { recursive: true })
+  console.log('Copied D1 migrations into config directory for wrangler')
+}
 
 const deduped = d1.length - config.d1_databases.length
 if (deduped > 0) {
