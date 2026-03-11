@@ -1,31 +1,32 @@
 <template>
-  <UPage class="container mx-auto py-8 px-4">
-    <UPageHeader
-      title="Edit Recipe"
-      description="Update your recipe"
-    />
-
+  <UPage>
     <UPageBody>
-      <div v-if="pending">
-        <div class="text-center py-8">
-          <p>Loading recipe...</p>
+      <UPageSection
+        title="Edit Recipe"
+        description="Update your recipe"
+        class="mx-auto w-full max-w-5xl"
+      >
+        <div v-if="pending">
+          <div class="text-center py-8">
+            <p>Loading recipe...</p>
+          </div>
         </div>
-      </div>
-      <div v-else-if="error">
-        <UAlert
-          color="error"
-          title="Error"
-          :description="error.message || 'Failed to load recipe'"
+        <div v-else-if="error">
+          <UAlert
+            color="error"
+            title="Error"
+            :description="error.message || 'Failed to load recipe'"
+          />
+        </div>
+        <RecipeForm
+          v-else-if="recipe"
+          :recipe="recipe"
+          :is-edit="true"
+          :submitting="submitting"
+          @submit="handleSubmit"
+          @cancel="handleCancel"
         />
-      </div>
-      <RecipeForm
-        v-else-if="recipe"
-        :recipe="recipe"
-        :is-edit="true"
-        :submitting="submitting"
-        @submit="handleSubmit"
-        @cancel="handleCancel"
-      />
+      </UPageSection>
     </UPageBody>
   </UPage>
 </template>

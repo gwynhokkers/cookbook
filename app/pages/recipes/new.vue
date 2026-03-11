@@ -1,16 +1,17 @@
 <template>
-  <UPage class="container mx-auto py-8 px-4">
-    <UPageHeader
-      title="Create New Recipe"
-      description="Add a new recipe to your cookbook"
-    />
-
+  <UPage>
     <UPageBody>
-      <RecipeForm
-        :submitting="submitting"
-        @submit="handleSubmit"
-        @cancel="handleCancel"
-      />
+      <UPageSection
+        title="Create New Recipe"
+        description="Add a new recipe to your cookbook"
+        class="mx-auto w-full max-w-5xl"
+      >
+        <RecipeForm
+          :submitting="submitting"
+          @submit="handleSubmit"
+          @cancel="handleCancel"
+        />
+      </UPageSection>
     </UPageBody>
   </UPage>
 </template>
