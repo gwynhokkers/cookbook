@@ -35,7 +35,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const redirectUri = `${getRequestURL(event).origin}/auth/github`
+  const origin = getRequestURL(event).origin
+  const redirectUri = `${origin}/auth/github`
+  const userAgent = `MegwynCookbook (${origin})`
 
   // #region agent log
   let lastStep = 'start'
@@ -44,12 +46,13 @@ export default defineEventHandler(async (event) => {
 
   try {
     lastStep = 'token_exchange'
-    // Exchange code for access token
+    // Exchange code for access token (GitHub requires User-Agent)
     const tokenResponse = await $fetch<{ access_token?: string; error?: string; error_description?: string }>('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'User-Agent': userAgent
       },
       body: {
         client_id: clientId,
@@ -70,7 +73,7 @@ export default defineEventHandler(async (event) => {
     }
 
     lastStep = 'user_fetch'
-    // Get user info from GitHub
+    // Get user info from GitHub (User-Agent required by GitHub API)
     const userResponse = await $fetch<{
       id: number
       login: string
@@ -80,7 +83,8 @@ export default defineEventHandler(async (event) => {
     }>('https://api.github.com/user', {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': userAgent
       }
     })
 
@@ -90,7 +94,8 @@ export default defineEventHandler(async (event) => {
       const emails = await $fetch<Array<{ email: string; primary: boolean }>>('https://api.github.com/user/emails', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json'
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': userAgent
         }
       })
       const primaryEmail = emails.find(e => e.primary)
