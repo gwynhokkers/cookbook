@@ -39,13 +39,7 @@ export default defineEventHandler(async (event) => {
   const redirectUri = `${origin}/auth/github`
   const userAgent = `MegwynCookbook (${origin})`
 
-  // #region agent log
-  let lastStep = 'start'
-  fetch('http://127.0.0.1:7244/ingest/836a5a53-c1a4-4537-b667-aa0ce7fbd95c', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e00b61' }, body: JSON.stringify({ sessionId: 'e00b61', runId: 'auth', hypothesisId: 'H1', location: 'auth/github.get.ts:entry', message: 'auth callback', data: { hasCode: !!code, hasClientId: !!clientId, hasClientSecret: !!clientSecret, redirectUri }, timestamp: Date.now() }) }).catch(() => {})
-  // #endregion
-
   try {
-    lastStep = 'token_exchange'
     // Exchange code for access token (GitHub requires User-Agent)
     const tokenResponse = await $fetch<{ access_token?: string; error?: string; error_description?: string }>('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -72,7 +66,6 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 500, statusMessage: 'GitHub did not return an access token' })
     }
 
-    lastStep = 'user_fetch'
     // Get user info from GitHub (User-Agent required by GitHub API)
     const userResponse = await $fetch<{
       id: number
@@ -106,7 +99,6 @@ export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig(event)
     const adminGithubIds = (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
 
-    lastStep = 'db'
     // Find or create user in database
     const githubId = userResponse.id.toString()
     let user = await db.select().from(schema.users)
@@ -166,7 +158,6 @@ export default defineEventHandler(async (event) => {
       user = { ...user, name: userResponse.name || userResponse.login, email, image: userResponse.avatar_url, role: roleUpdate }
     }
 
-    lastStep = 'session'
     // Set user session (include role for frontend and API checks)
     await setUserSession(event, {
       user: {
@@ -182,25 +173,13 @@ export default defineEventHandler(async (event) => {
     return sendRedirect(event, '/')
   } catch (error: unknown) {
     const err = error as { message?: string; statusCode?: number; data?: unknown }
-    const rawMessage = err?.message ?? (typeof error === 'object' && error !== null && 'message' in error ? String((error as { message: unknown }).message) : String(error))
-    const sanitised = rawMessage.replace(/\b(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[a-zA-Z0-9_]+/g, '[REDACTED]').slice(0, 200)
-    console.error('[auth/github] OAuth error', { lastStep, message: err?.message, statusCode: err?.statusCode, data: err?.data })
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/836a5a53-c1a4-4537-b667-aa0ce7fbd95c', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e00b61' }, body: JSON.stringify({ sessionId: 'e00b61', runId: 'auth', hypothesisId: 'H2-H5', location: 'auth/github.get.ts:catch', message: 'auth failed', data: { lastStep, errorMessage: err?.message }, timestamp: Date.now() }) }).catch(() => {})
-    // #endregion
+    console.error('[auth/github] OAuth error:', err?.message ?? error)
     if (err?.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
       throw error
     }
-    setResponseHeaders(event, {
-      'X-Auth-Failure-Step': lastStep,
-      'X-Auth-Failure-Reason': sanitised
-    })
-    const statusMessage = lastStep === 'db' && rawMessage.includes('Failed query')
-      ? 'Failed to authenticate with GitHub (database error: ensure D1 migrations were applied — see docs/cloudflare-deployment.md)'
-      : 'Failed to authenticate with GitHub'
     throw createError({
       statusCode: 500,
-      statusMessage
+      statusMessage: 'Failed to authenticate with GitHub'
     })
   }
 })
