@@ -894,7 +894,8 @@ const extractAndPrefill = async () => {
     extractionSummary.value = `Prefill complete: ${extractedIngredientCount} ingredients and ${extractedStepCount} steps extracted.`
     extractionFile.value = null
   } catch (error: any) {
-    const rawMessage = error?.data?.statusMessage || error?.message || ''
+    const detailMessage = typeof error?.data?.detail === 'string' ? error.data.detail : ''
+    const rawMessage = detailMessage || error?.data?.statusMessage || error?.statusMessage || error?.message || ''
     if (rawMessage.includes('NotReadableError') || rawMessage.includes('The requested file could not be read')) {
       extractionError.value = 'We could not read that image file. Please re-select it (or save it locally) and try again.'
     } else if (rawMessage.includes('AI binding not available') || rawMessage.includes('AI Gateway ID not configured')) {
