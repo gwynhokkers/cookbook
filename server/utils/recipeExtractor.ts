@@ -22,6 +22,25 @@ export interface ExtractedRecipe {
   servings?: number
 }
 
+const normalizeErrorDetail = (value: unknown, fallback = 'Unknown error', maxLength = 2000): string => {
+  const base = typeof value === 'string'
+    ? value
+    : (() => {
+        try {
+          return JSON.stringify(value)
+        } catch {
+          return String(value)
+        }
+      })()
+
+  const compact = base.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!compact) {
+    return fallback
+  }
+
+  return compact.slice(0, maxLength)
+}
+
 /**
  * Extract recipe information from an image using AI vision model
  */
@@ -125,10 +144,15 @@ async function getAIClient(event?: any): Promise<any> {
               statusMessage: `Authentication failed. ${hasGatewayAuth ? 'Gateway auth token provided but still failing.' : 'If your gateway has "Authenticated Gateway" enabled, you need to set NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN in .env. '}Common causes: 1) Authenticated Gateway enabled but missing cf-aig-authorization header, 2) API token has IP filtering - use "All IP addresses" or add your public IP (not private IP), 3) API token has incorrect permissions - ensure "Workers AI: Read" and "AI Gateway: Read" are set, 4) Token is not scoped to the correct account, 5) Token may be expired or revoked. See SETUP_CLOUDFLARE_AI.md for troubleshooting.`
             })
           }
+          const dynamicErrorMessage = errorData.message || errorData.error?.[0]?.message || errorData.errors?.[0]?.message || errorText
+          const normalizedDynamicErrorMessage = normalizeErrorDetail(dynamicErrorMessage, 'Unknown Cloudflare AI API error', 4000)
           
           throw createError({
             statusCode: response.status,
-            statusMessage: `Cloudflare AI API error: ${errorData.message || errorData.error?.[0]?.message || errorData.errors?.[0]?.message || errorText}`
+            statusMessage: 'Cloudflare AI API error',
+            data: {
+              detail: normalizedDynamicErrorMessage
+            }
           })
         }
         
@@ -346,6 +370,11 @@ CRITICAL INSTRUCTIONS:
     // Validate and normalize the extracted data
     return normalizeExtractedRecipe(extractedData)
   } catch (error: any) {
+    const originalErrorDetail = normalizeErrorDetail(
+      error?.data?.detail || error?.statusMessage || error?.message,
+      'Unknown error',
+      4000
+    )
     if (error.statusCode === 429) {
       throw createError({
         statusCode: 429,
@@ -358,9 +387,15 @@ CRITICAL INSTRUCTIONS:
         statusMessage: 'AI quota exceeded. Please check your plan limits.'
       })
     }
+    const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600
+      ? error.statusCode
+      : 500
     throw createError({
-      statusCode: 500,
-      statusMessage: `Failed to extract recipe: ${error.message || 'Unknown error'}`
+      statusCode,
+      statusMessage: 'Failed to extract recipe',
+      data: {
+        detail: originalErrorDetail
+      }
     })
   }
 }
