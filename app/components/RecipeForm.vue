@@ -838,20 +838,28 @@ const getFirstFile = (files: unknown) => {
     return null
   }
 
-  const fileArray = files instanceof FileList
+  const rawFiles = files instanceof FileList
     ? Array.from(files)
     : (Array.isArray(files) ? files : [files])
 
-  return fileArray[0] || null
-}
+  const firstEntry = rawFiles[0] as any
+  if (!firstEntry) {
+    return null
+  }
 
-const fileToBase64 = async (file: File): Promise<string> => {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error || new Error('Unable to read image'))
-    reader.readAsDataURL(file)
-  })
+  if (firstEntry instanceof File) {
+    return firstEntry
+  }
+
+  if (firstEntry.file instanceof File) {
+    return firstEntry.file
+  }
+
+  if (firstEntry.raw instanceof File) {
+    return firstEntry.raw
+  }
+
+  return null
 }
 
 const clearExtractionFile = () => {
@@ -871,10 +879,12 @@ const extractAndPrefill = async () => {
   extractingRecipe.value = true
 
   try {
-    const imageBase64 = await fileToBase64(file)
+    const requestBody = new FormData()
+    requestBody.append('image', file)
+
     const extracted = await $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
       method: 'POST',
-      body: { imageBase64 }
+      body: requestBody
     })
 
     mergeExtractedRecipe(extracted, extractionApplyMode.value)
@@ -885,7 +895,9 @@ const extractAndPrefill = async () => {
     extractionFile.value = null
   } catch (error: any) {
     const rawMessage = error?.data?.statusMessage || error?.message || ''
-    if (rawMessage.includes('AI binding not available') || rawMessage.includes('AI Gateway ID not configured')) {
+    if (rawMessage.includes('NotReadableError') || rawMessage.includes('The requested file could not be read')) {
+      extractionError.value = 'We could not read that image file. Please re-select it (or save it locally) and try again.'
+    } else if (rawMessage.includes('AI binding not available') || rawMessage.includes('AI Gateway ID not configured')) {
       extractionError.value = 'AI scanning is not configured in this environment yet. Add the Cloudflare AI env vars, then retry.'
     } else if (rawMessage.includes('rate limit exceeded')) {
       extractionError.value = 'AI scanning is temporarily rate-limited. Please wait a moment and try again.'
