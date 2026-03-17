@@ -17,7 +17,8 @@ export default defineNuxtConfig({
     db: 'sqlite',
     kv: true,
     cache: true,
-    blob: true
+    blob: true,
+    ai: true
   },
 
   image: {
