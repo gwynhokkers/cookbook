@@ -18,8 +18,9 @@
           <UFileUpload
             v-model="extractionFile"
             accept="image/*"
+            capture="environment"
             label="Choose cookbook photo or scan"
-            description="Best results: one clear recipe per image."
+            description="Best on mobile: use rear camera, one recipe per image, max 8MB (JPG/PNG/WEBP/GIF)."
           />
         </UFormField>
 
@@ -37,10 +38,12 @@
         </UFormField>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <UButton
           type="button"
           icon="i-heroicons-sparkles"
+          size="lg"
+          class="w-full justify-center sm:w-auto"
           :loading="extractingRecipe"
           :disabled="!hasExtractionFile || extractingRecipe || submitting || uploadingFile"
           @click="extractAndPrefill"
@@ -50,6 +53,8 @@
         <UButton
           type="button"
           variant="outline"
+          size="lg"
+          class="w-full justify-center sm:w-auto"
           :disabled="!hasExtractionFile || extractingRecipe"
           @click="clearExtractionFile"
         >
@@ -145,6 +150,7 @@
           <UFileUpload
             v-model="selectedFile"
             accept="image/*"
+            capture="environment"
             :label="state.imageUrl ? 'Replace image' : 'Upload image'"
             description="JPG, PNG, WEBP or GIF (max. 4MB)"
           />
@@ -206,6 +212,7 @@
               type="button"
               icon="i-heroicons-plus"
               variant="outline"
+              class="w-full sm:w-auto"
               @click="addTag"
             >
               Add tag
@@ -395,21 +402,29 @@
       </UFormField>
     </div>
 
-    <div class="sticky bottom-4 z-10">
-      <div class="rounded-xl border border-default bg-default/95 backdrop-blur-sm p-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="sticky bottom-3 z-10 pb-[env(safe-area-inset-bottom)]">
+      <div class="rounded-xl border border-default bg-default/95 backdrop-blur-sm p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p class="text-sm text-muted">
           {{ isEdit ? 'Review changes and save when ready.' : 'Ready to publish your recipe?' }}
         </p>
-        <div class="flex items-center gap-3">
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
           <UButton
             type="button"
             variant="outline"
+            size="lg"
+            class="w-full justify-center sm:w-auto"
             :disabled="submitting"
             @click="$emit('cancel')"
           >
             Cancel
           </UButton>
-          <UButton type="submit" :loading="submitting" :disabled="isSubmitDisabled">
+          <UButton
+            type="submit"
+            size="lg"
+            class="w-full justify-center sm:w-auto"
+            :loading="submitting"
+            :disabled="isSubmitDisabled"
+          >
             {{ isEdit ? 'Update Recipe' : 'Create Recipe' }}
           </UButton>
         </div>
@@ -504,6 +519,9 @@ interface ExtractedRecipeResponse {
   tags?: string[]
   source?: string
 }
+
+const MAX_EXTRACTION_FILE_SIZE_BYTES = 8 * 1024 * 1024
+const HEIC_EXTENSIONS = ['.heic', '.heif']
 
 // Load recipe ingredients if editing
 const loadRecipeIngredients = async () => {
@@ -859,7 +877,57 @@ const getFirstFile = (files: unknown) => {
     return firstEntry.raw
   }
 
+  if (firstEntry instanceof Blob) {
+    return new File([firstEntry], 'image-upload', {
+      type: firstEntry.type || inferMimeTypeFromName() || 'application/octet-stream',
+      lastModified: Date.now()
+    })
+  }
+
+  if (firstEntry.blob instanceof Blob) {
+    const blob = firstEntry.blob as Blob
+    const name = typeof firstEntry.name === 'string' && firstEntry.name.trim().length > 0
+      ? firstEntry.name
+      : 'image-upload'
+    return new File([blob], name, {
+      type: blob.type || inferMimeTypeFromName(name) || 'application/octet-stream',
+      lastModified: Date.now()
+    })
+  }
+
   return null
+}
+
+const inferMimeTypeFromName = (name?: string) => {
+  const lowerName = (name || '').toLowerCase()
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg'
+  if (lowerName.endsWith('.png')) return 'image/png'
+  if (lowerName.endsWith('.webp')) return 'image/webp'
+  if (lowerName.endsWith('.gif')) return 'image/gif'
+  if (lowerName.endsWith('.heic')) return 'image/heic'
+  if (lowerName.endsWith('.heif')) return 'image/heif'
+  return ''
+}
+
+const isHeicLike = (file: File) => {
+  const lowerType = (file.type || '').toLowerCase()
+  const lowerName = (file.name || '').toLowerCase()
+  return lowerType === 'image/heic'
+    || lowerType === 'image/heif'
+    || HEIC_EXTENSIONS.some(ext => lowerName.endsWith(ext))
+}
+
+const isSupportedExtractionImage = (mimeType: string) => {
+  return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mimeType)
+}
+
+const materializeExtractionFile = async (file: File) => {
+  const bytes = await file.arrayBuffer()
+  const inferredType = file.type || inferMimeTypeFromName(file.name) || 'application/octet-stream'
+  return new File([bytes], file.name || 'scan-image', {
+    type: inferredType,
+    lastModified: Date.now()
+  })
 }
 
 const clearExtractionFile = () => {
@@ -876,11 +944,34 @@ const extractAndPrefill = async () => {
     return
   }
 
+  if (isHeicLike(file)) {
+    extractionError.value = 'HEIC/HEIF photos are not supported yet. On iPhone, switch Camera > Formats to "Most Compatible" or convert to JPG/PNG before scanning.'
+    return
+  }
+
+  if (file.size <= 0) {
+    extractionError.value = 'This image appears empty. Please re-select the photo and try again.'
+    return
+  }
+
+  if (file.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
+    extractionError.value = 'Image is too large for AI scan (max 8MB). Please crop/resize and try again.'
+    return
+  }
+
   extractingRecipe.value = true
 
   try {
+    const stableFile = await materializeExtractionFile(file)
+    const effectiveType = (stableFile.type || inferMimeTypeFromName(stableFile.name) || '').toLowerCase()
+
+    if (!isSupportedExtractionImage(effectiveType)) {
+      extractionError.value = 'Unsupported image format. Please upload JPG, PNG, WEBP, or GIF.'
+      return
+    }
+
     const requestBody = new FormData()
-    requestBody.append('image', file)
+    requestBody.append('image', stableFile)
 
     const extracted = await $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
       method: 'POST',
@@ -894,7 +985,8 @@ const extractAndPrefill = async () => {
     extractionSummary.value = `Prefill complete: ${extractedIngredientCount} ingredients and ${extractedStepCount} steps extracted.`
     extractionFile.value = null
   } catch (error: any) {
-    const rawMessage = error?.data?.statusMessage || error?.message || ''
+    const detailMessage = typeof error?.data?.detail === 'string' ? error.data.detail : ''
+    const rawMessage = detailMessage || error?.data?.statusMessage || error?.statusMessage || error?.message || ''
     if (rawMessage.includes('NotReadableError') || rawMessage.includes('The requested file could not be read')) {
       extractionError.value = 'We could not read that image file. Please re-select it (or save it locally) and try again.'
     } else if (rawMessage.includes('AI binding not available') || rawMessage.includes('AI Gateway ID not configured')) {
@@ -917,13 +1009,12 @@ watch(selectedFile, async (files) => {
     return
   }
 
-  // Handle both FileList and File[] types
-  const fileArray = files instanceof FileList ? Array.from(files) : (Array.isArray(files) ? files : [files])
-  if (fileArray.length === 0) {
+  const file = getFirstFile(files)
+  if (!(file instanceof File)) {
+    uploadError.value = 'Unable to read that photo. Please select the image again.'
+    selectedFile.value = null
     return
   }
-
-  const file = fileArray[0]
   uploadError.value = null
   uploadingFile.value = true
 
