@@ -505,6 +505,9 @@ interface ExtractedRecipeResponse {
   source?: string
 }
 
+const MAX_EXTRACTION_FILE_SIZE_BYTES = 8 * 1024 * 1024
+const HEIC_EXTENSIONS = ['.heic', '.heif']
+
 // Load recipe ingredients if editing
 const loadRecipeIngredients = async () => {
   if (props.recipe?.id) {
@@ -862,6 +865,38 @@ const getFirstFile = (files: unknown) => {
   return null
 }
 
+const inferMimeTypeFromName = (name?: string) => {
+  const lowerName = (name || '').toLowerCase()
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg'
+  if (lowerName.endsWith('.png')) return 'image/png'
+  if (lowerName.endsWith('.webp')) return 'image/webp'
+  if (lowerName.endsWith('.gif')) return 'image/gif'
+  if (lowerName.endsWith('.heic')) return 'image/heic'
+  if (lowerName.endsWith('.heif')) return 'image/heif'
+  return ''
+}
+
+const isHeicLike = (file: File) => {
+  const lowerType = (file.type || '').toLowerCase()
+  const lowerName = (file.name || '').toLowerCase()
+  return lowerType === 'image/heic'
+    || lowerType === 'image/heif'
+    || HEIC_EXTENSIONS.some(ext => lowerName.endsWith(ext))
+}
+
+const isSupportedExtractionImage = (mimeType: string) => {
+  return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mimeType)
+}
+
+const materializeExtractionFile = async (file: File) => {
+  const bytes = await file.arrayBuffer()
+  const inferredType = file.type || inferMimeTypeFromName(file.name) || 'application/octet-stream'
+  return new File([bytes], file.name || 'scan-image', {
+    type: inferredType,
+    lastModified: Date.now()
+  })
+}
+
 const clearExtractionFile = () => {
   extractionFile.value = null
 }
@@ -876,11 +911,34 @@ const extractAndPrefill = async () => {
     return
   }
 
+  if (isHeicLike(file)) {
+    extractionError.value = 'HEIC/HEIF photos are not supported yet. On iPhone, switch Camera > Formats to "Most Compatible" or convert to JPG/PNG before scanning.'
+    return
+  }
+
+  if (file.size <= 0) {
+    extractionError.value = 'This image appears empty. Please re-select the photo and try again.'
+    return
+  }
+
+  if (file.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
+    extractionError.value = 'Image is too large for AI scan (max 8MB). Please crop/resize and try again.'
+    return
+  }
+
   extractingRecipe.value = true
 
   try {
+    const stableFile = await materializeExtractionFile(file)
+    const effectiveType = (stableFile.type || inferMimeTypeFromName(stableFile.name) || '').toLowerCase()
+
+    if (!isSupportedExtractionImage(effectiveType)) {
+      extractionError.value = 'Unsupported image format. Please upload JPG, PNG, WEBP, or GIF.'
+      return
+    }
+
     const requestBody = new FormData()
-    requestBody.append('image', file)
+    requestBody.append('image', stableFile)
 
     const extracted = await $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
       method: 'POST',

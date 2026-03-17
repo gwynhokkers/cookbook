@@ -187,9 +187,31 @@ async function getAIClient(event?: any): Promise<any> {
   }
 }
 
-export async function extractRecipeFromImage(imageBase64: string, event?: any): Promise<ExtractedRecipe> {
+const normalizeImageMimeType = (imageMimeType?: string): string => {
+  if (!imageMimeType) {
+    return 'image/jpeg'
+  }
+
+  const normalized = imageMimeType.toLowerCase().trim()
+  const allowedMimeTypes = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif'
+  ])
+
+  if (allowedMimeTypes.has(normalized)) {
+    return normalized === 'image/jpg' ? 'image/jpeg' : normalized
+  }
+
+  return 'image/jpeg'
+}
+
+export async function extractRecipeFromImage(imageBase64: string, event?: any, imageMimeType?: string): Promise<ExtractedRecipe> {
   // Get AI client (binding when event provided in production, else gateway/token for local)
   const ai = await getAIClient(event)
+  const normalizedMimeType = normalizeImageMimeType(imageMimeType)
 
   // Create a detailed prompt for recipe extraction
   // IMPORTANT: The prompt must explicitly instruct the model to analyze the IMAGE
@@ -277,7 +299,7 @@ CRITICAL INSTRUCTIONS:
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:image/jpeg;base64,${imageBase64}`
+                  url: `data:${normalizedMimeType};base64,${imageBase64}`
                 }
               }
             ]
