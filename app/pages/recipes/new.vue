@@ -25,6 +25,17 @@ const router = useRouter()
 const toast = useToast()
 const submitting = ref(false)
 
+// Avoid focusing the first form input (e.g. ingredient) on initial navigation
+onMounted(() => {
+  nextTick(() => {
+    const el = document.activeElement as HTMLElement | null
+    if (el?.blur) {
+      el.blur()
+    }
+    window.scrollTo(0, 0)
+  })
+})
+
 const handleSubmit = async (data: any) => {
   submitting.value = true
   try {

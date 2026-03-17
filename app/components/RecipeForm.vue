@@ -15,12 +15,9 @@
 
       <div class="grid gap-3 md:grid-cols-2">
         <UFormField label="Cookbook page image">
-          <UFileUpload
+          <ImageSourcePicker
             v-model="extractionFile"
-            accept="image/*"
-            capture="environment"
-            label="Choose cookbook photo or scan"
-            description="Best on mobile: use rear camera, one recipe per image, max 8MB (JPG/PNG/WEBP/GIF)."
+            description="Take a photo or choose from library. One recipe per image, max 8MB (JPG/PNG/WEBP/GIF)."
           />
         </UFormField>
 
@@ -147,12 +144,11 @@
             />
           </div>
 
-          <UFileUpload
+          <ImageSourcePicker
             v-model="selectedFile"
-            accept="image/*"
-            capture="environment"
             :label="state.imageUrl ? 'Replace image' : 'Upload image'"
             description="JPG, PNG, WEBP or GIF (max. 4MB)"
+            :disabled="uploadingFile"
           />
 
           <div v-if="uploadingFile" class="flex items-center gap-2 text-sm">
