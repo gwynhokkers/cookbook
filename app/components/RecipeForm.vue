@@ -18,8 +18,9 @@
           <UFileUpload
             v-model="extractionFile"
             accept="image/*"
+            capture="environment"
             label="Choose cookbook photo or scan"
-            description="Best results: one clear recipe per image."
+            description="Best on mobile: use rear camera, one recipe per image, max 8MB (JPG/PNG/WEBP/GIF)."
           />
         </UFormField>
 
@@ -37,10 +38,12 @@
         </UFormField>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <UButton
           type="button"
           icon="i-heroicons-sparkles"
+          size="lg"
+          class="w-full justify-center sm:w-auto"
           :loading="extractingRecipe"
           :disabled="!hasExtractionFile || extractingRecipe || submitting || uploadingFile"
           @click="extractAndPrefill"
@@ -50,6 +53,8 @@
         <UButton
           type="button"
           variant="outline"
+          size="lg"
+          class="w-full justify-center sm:w-auto"
           :disabled="!hasExtractionFile || extractingRecipe"
           @click="clearExtractionFile"
         >
@@ -145,6 +150,7 @@
           <UFileUpload
             v-model="selectedFile"
             accept="image/*"
+            capture="environment"
             :label="state.imageUrl ? 'Replace image' : 'Upload image'"
             description="JPG, PNG, WEBP or GIF (max. 4MB)"
           />
@@ -206,6 +212,7 @@
               type="button"
               icon="i-heroicons-plus"
               variant="outline"
+              class="w-full sm:w-auto"
               @click="addTag"
             >
               Add tag
@@ -395,21 +402,29 @@
       </UFormField>
     </div>
 
-    <div class="sticky bottom-4 z-10">
-      <div class="rounded-xl border border-default bg-default/95 backdrop-blur-sm p-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="sticky bottom-3 z-10 pb-[env(safe-area-inset-bottom)]">
+      <div class="rounded-xl border border-default bg-default/95 backdrop-blur-sm p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p class="text-sm text-muted">
           {{ isEdit ? 'Review changes and save when ready.' : 'Ready to publish your recipe?' }}
         </p>
-        <div class="flex items-center gap-3">
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
           <UButton
             type="button"
             variant="outline"
+            size="lg"
+            class="w-full justify-center sm:w-auto"
             :disabled="submitting"
             @click="$emit('cancel')"
           >
             Cancel
           </UButton>
-          <UButton type="submit" :loading="submitting" :disabled="isSubmitDisabled">
+          <UButton
+            type="submit"
+            size="lg"
+            class="w-full justify-center sm:w-auto"
+            :loading="submitting"
+            :disabled="isSubmitDisabled"
+          >
             {{ isEdit ? 'Update Recipe' : 'Create Recipe' }}
           </UButton>
         </div>
@@ -862,6 +877,24 @@ const getFirstFile = (files: unknown) => {
     return firstEntry.raw
   }
 
+  if (firstEntry instanceof Blob) {
+    return new File([firstEntry], 'image-upload', {
+      type: firstEntry.type || inferMimeTypeFromName() || 'application/octet-stream',
+      lastModified: Date.now()
+    })
+  }
+
+  if (firstEntry.blob instanceof Blob) {
+    const blob = firstEntry.blob as Blob
+    const name = typeof firstEntry.name === 'string' && firstEntry.name.trim().length > 0
+      ? firstEntry.name
+      : 'image-upload'
+    return new File([blob], name, {
+      type: blob.type || inferMimeTypeFromName(name) || 'application/octet-stream',
+      lastModified: Date.now()
+    })
+  }
+
   return null
 }
 
@@ -976,13 +1009,12 @@ watch(selectedFile, async (files) => {
     return
   }
 
-  // Handle both FileList and File[] types
-  const fileArray = files instanceof FileList ? Array.from(files) : (Array.isArray(files) ? files : [files])
-  if (fileArray.length === 0) {
+  const file = getFirstFile(files)
+  if (!(file instanceof File)) {
+    uploadError.value = 'Unable to read that photo. Please select the image again.'
+    selectedFile.value = null
     return
   }
-
-  const file = fileArray[0]
   uploadError.value = null
   uploadingFile.value = true
 
