@@ -215,40 +215,50 @@ export async function extractRecipeFromImage(imageBase64: string, event?: any, i
 
   // Create a detailed prompt for recipe extraction
   // IMPORTANT: The prompt must explicitly instruct the model to analyze the IMAGE
-  const prompt = `You are a recipe extraction assistant. I am providing you with an IMAGE of a recipe. You must carefully analyze the IMAGE and extract the recipe information that is VISIBLE IN THE IMAGE. Do NOT generate a generic recipe - extract ONLY what you can see in the image.
+  const prompt = `You are a recipe extraction assistant.
+You are given ONE IMAGE containing a recipe. Extract ONLY information visible in the image.
+Do not invent or infer missing ingredients/steps that are not present.
 
-Return the extracted information in this EXACT JSON format (no markdown, no code blocks, just pure JSON):
-
+Return STRICT JSON only (no markdown, no prose, no code fences). Use this exact top-level shape:
 {
-  "title": "Recipe title as it appears in the image",
-  "description": "Description if visible in image, otherwise empty string",
-  "servings": number of servings as a number (e.g., 2, 4, 6). If you see a range like "2-3 servings" or "4-6 servings", use the lower number. If servings are not specified, omit this field,
+  "title": string,
+  "description": string,
+  "servings": number,
   "ingredients": [
     {
-      "amount": "exact amount as shown in image (e.g., '2', '1.5', '1/2')",
-      "unit": "unit as shown in image (e.g., 'cups', 'tbsp', 'tsp', 'grams', 'ml', 'pieces')",
-      "ingredientName": "ingredient name as written in the image",
-      "notes": "any preparation notes visible in image (e.g., 'chopped', 'diced', 'fresh')"
+      "amount": string,
+      "unit": string,
+      "ingredientName": string,
+      "notes": string
     }
   ],
   "steps": [
     {
-      "title": "Step number or title as shown in image",
-      "content": "Step instructions exactly as written in the image"
+      "title": string,
+      "content": string
     }
   ],
-  "tags": ["tags if visible in image"],
-  "source": "Source URL or name if visible in image"
+  "tags": string[],
+  "source": string
 }
 
-CRITICAL INSTRUCTIONS:
-- Look at the IMAGE carefully and extract ONLY what is visible
-- Do NOT make up or generate example recipes
-- For servings: if you see "2-3 servings" or "4-6 servings", use the lower number (2 or 4)
-- If you cannot see certain information in the image, use empty strings or empty arrays
-- Extract ingredients EXACTLY as they appear in the image
-- Extract steps EXACTLY as they appear in the image
-- Return ONLY valid JSON - no explanations, no markdown code blocks`
+STRICT RULES:
+1) Always return all top-level keys shown above.
+2) If a value is not visible, use:
+   - empty string for strings
+   - empty array for arrays
+   - omit "servings" OR set it to 0 if unknown
+3) For servings ranges like "2-3" or "4-6", use the lower integer.
+4) Ingredients:
+   - Keep "amount" and "ingredientName" exactly as written where possible.
+   - Use short canonical units when clear: cups, tbsp, tsp, grams, kg, oz, lb, ml, l, pieces.
+   - Put preparation text into "notes" (e.g. chopped, diced, softened).
+5) Steps:
+   - "content" must contain the instruction text.
+   - "title" should be a short meaningful title.
+   - If no title is shown, generate a concise action title from the instruction text (e.g. "Mix dry ingredients", "Bake until golden"), never just a number.
+6) Keep ordering as shown in the image.
+7) Output must be valid JSON parseable by JSON.parse.`
 
   try {
     // Use a vision-capable model
@@ -512,6 +522,39 @@ function parseTextResponse(text: string): ExtractedRecipe {
  * Normalize and validate extracted recipe data
  */
 function normalizeExtractedRecipe(data: any): ExtractedRecipe {
+  const deriveStepTitle = (rawTitle: unknown, rawContent: unknown, index: number): string => {
+    const title = String(rawTitle || '').trim()
+    const content = String(rawContent || '').trim()
+    const isNumericTitle = /^(?:step\s*)?\d+[).:\-]*$/i.test(title)
+    if (title && !isNumericTitle) {
+      return title
+    }
+
+    const cleaned = content
+      .replace(/^\s*(?:step\s*)?\d+[).:\-]*\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    if (!cleaned) {
+      return `Step ${index + 1}`
+    }
+
+    const firstSentence = cleaned.split(/[.!?]/)[0]?.trim() || cleaned
+    const words = firstSentence.split(/\s+/).filter(Boolean)
+    if (words.length === 0) {
+      return `Step ${index + 1}`
+    }
+
+    const trimmedWords = words.slice(0, 6)
+    const firstWord = trimmedWords[0]
+    if (firstWord) {
+      trimmedWords[0] = firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase()
+    }
+
+    const candidate = trimmedWords.join(' ').replace(/[,:;]+$/, '').trim()
+    return candidate || `Step ${index + 1}`
+  }
+
   // Extract and round down servings
   let servings: number | undefined = undefined
   if (data.servings !== undefined && data.servings !== null) {
@@ -700,19 +743,25 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
   if (Array.isArray(data.steps)) {
     normalized.steps = data.steps
       .filter((step: any) => step && typeof step === 'object')
-      .map((step: any, index: number) => ({
-        title: String(step.title || `Step ${index + 1}`).trim(),
-        content: String(step.content || step.text || step.instruction || '').trim()
-      }))
+      .map((step: any, index: number) => {
+        const content = String(step.content || step.text || step.instruction || '').trim()
+        return {
+          title: deriveStepTitle(step.title, content, index),
+          content
+        }
+      })
       .filter((step: any) => step.content) // Only keep steps with content
   } else if (Array.isArray(data.instructions)) {
     // Handle alternative field name
     normalized.steps = data.instructions
       .filter((step: any) => step && typeof step === 'object')
-      .map((step: any, index: number) => ({
-        title: String(step.title || `Step ${index + 1}`).trim(),
-        content: String(step.content || step.text || step.instruction || step).trim()
-      }))
+      .map((step: any, index: number) => {
+        const content = String(step.content || step.text || step.instruction || step).trim()
+        return {
+          title: deriveStepTitle(step.title, content, index),
+          content
+        }
+      })
       .filter((step: any) => step.content)
   }
 

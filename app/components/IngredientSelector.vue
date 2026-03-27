@@ -295,8 +295,8 @@ watch(() => open.value, (isOpen) => {
 
 // Sync with modelValue prop
 watch(() => props.modelValue, (newValue) => {
-  if (newValue && !selectedIngredient.value) {
-    // If we have a value but no selected ingredient, create a manual entry
+  if (newValue && selectedIngredient.value?.name !== newValue) {
+    // Keep local selection in sync with parent updates (including AI prefill).
     selectedIngredient.value = { id: 0, name: newValue } as SpoonacularIngredient
   } else if (!newValue) {
     selectedIngredient.value = null

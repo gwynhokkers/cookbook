@@ -19,6 +19,33 @@
             v-model="extractionFile"
             description="Take a photo or choose from library. One recipe per image, max 8MB (JPG/PNG/WEBP/GIF)."
           />
+          <div v-if="extractionPreviewUrl" class="mt-3 rounded-lg border border-default p-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-sm font-medium truncate">
+                {{ extractionPreviewFileName || 'Selected image' }}
+              </p>
+              <UButton
+                type="button"
+                size="xs"
+                variant="ghost"
+                icon="i-heroicons-x-mark"
+                @click="clearExtractionFile"
+              >
+                Remove
+              </UButton>
+            </div>
+            <NuxtImg
+              :src="extractionPreviewUrl"
+              alt="Selected cookbook page preview"
+              class="w-full max-w-sm rounded-md border border-default object-cover"
+              width="480"
+              height="320"
+              loading="lazy"
+            />
+            <p class="text-xs text-muted">
+              {{ extractionPreviewFileSizeText }}
+            </p>
+          </div>
         </UFormField>
 
         <UFormField
@@ -71,6 +98,10 @@
         variant="soft"
         :title="extractionSummary"
       />
+      <div v-if="hydratingPrefilledIngredients" class="flex items-center gap-2 text-xs text-muted">
+        <UIcon name="i-heroicons-arrow-path" class="animate-spin" />
+        <span>Matching extracted ingredients to your ingredient library...</span>
+      </div>
     </div>
 
     <div class="rounded-xl border border-default p-5 space-y-5">
@@ -337,7 +368,7 @@
             class="rounded-xl border border-default p-4 space-y-3"
           >
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <UBadge color="neutral" variant="subtle">Step {{ index + 1 }}</UBadge>
+              <UBadge color="neutral" variant="subtle">Step {{ Number(index) + 1 }}</UBadge>
               <div class="flex items-center gap-1">
                 <UButton
                   type="button"
@@ -346,7 +377,7 @@
                   variant="ghost"
                   size="sm"
                   :disabled="index === 0"
-                  @click="moveStep(index, index - 1)"
+                  @click="moveStep(Number(index), Number(index) - 1)"
                 />
                 <UButton
                   type="button"
@@ -355,7 +386,7 @@
                   variant="ghost"
                   size="sm"
                   :disabled="index === state.steps.length - 1"
-                  @click="moveStep(index, index + 1)"
+                  @click="moveStep(Number(index), Number(index) + 1)"
                 />
                 <UButton
                   type="button"
@@ -597,6 +628,8 @@ const extractionApplyMode = ref<ExtractionApplyMode>(props.isEdit ? 'fill-empty'
 const extractingRecipe = ref(false)
 const extractionError = ref<string | null>(null)
 const extractionSummary = ref<string | null>(null)
+const hydratingPrefilledIngredients = ref(false)
+const extractionPreviewUrl = ref<string | null>(null)
 const submitting = computed(() => Boolean(props.submitting))
 const hasExtractionFile = computed(() => {
   if (!extractionFile.value) {
@@ -609,6 +642,21 @@ const hasExtractionFile = computed(() => {
 })
 const isSubmitDisabled = computed(() => {
   return uploadingFile.value || submitting.value || !state.title.trim() || !state.date
+})
+const extractionPreviewFile = computed(() => getFirstFile(extractionFile.value))
+const extractionPreviewFileName = computed(() => extractionPreviewFile.value?.name || '')
+const extractionPreviewFileSizeText = computed(() => {
+  const size = extractionPreviewFile.value?.size
+  if (!size || size < 0) {
+    return ''
+  }
+  if (size < 1024) {
+    return `${size} B`
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 })
 
 const addTag = () => {
@@ -784,12 +832,40 @@ const toExtractedSteps = (steps: ExtractedRecipeResponse['steps']) => {
     return []
   }
 
+  const inferStepTitle = (title: string, content: string, index: number) => {
+    const trimmedTitle = title.trim()
+    const isNumericTitle = /^(?:step\s*)?\d+[).:\-]*$/i.test(trimmedTitle)
+    if (trimmedTitle && !isNumericTitle) {
+      return trimmedTitle
+    }
+
+    const cleaned = content
+      .replace(/^\s*(?:step\s*)?\d+[).:\-]*\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!cleaned) {
+      return `Step ${index + 1}`
+    }
+
+    const sentence = cleaned.split(/[.!?]/)[0]?.trim() || cleaned
+    const words = sentence.split(/\s+/).filter(Boolean).slice(0, 6)
+    if (words.length === 0) {
+      return `Step ${index + 1}`
+    }
+
+    words[0] = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase()
+    return words.join(' ').replace(/[,:;]+$/, '').trim() || `Step ${index + 1}`
+  }
+
   return steps
-    .map((step, index) => ({
-      rowId: createRowId('step'),
-      title: String(step.title || `Step ${index + 1}`).trim(),
-      content: String(step.content || '').trim()
-    }))
+    .map((step, index) => {
+      const content = String(step.content || '').trim()
+      return {
+        rowId: createRowId('step'),
+        title: inferStepTitle(String(step.title || ''), content, index),
+        content
+      }
+    })
     .filter(step => step.content)
 }
 
@@ -844,6 +920,61 @@ const mergeExtractedRecipe = (extracted: ExtractedRecipeResponse, mode: Extracti
   }
   if (state.steps.length === 0) {
     state.steps = [createEmptyStep()]
+  }
+}
+
+const persistIngredientForRow = async (index: number, ingredientName: string) => {
+  const normalizedName = ingredientName.trim()
+  if (!normalizedName) {
+    return
+  }
+
+  const ing = state.ingredients[index]
+  if (!ing) {
+    return
+  }
+
+  // Do not overwrite rows that already have a linked ingredient.
+  if (ing.ingredientId || ing.spoonacularIngredientId) {
+    return
+  }
+
+  try {
+    const existing = await $fetch<Array<{ id: string; name: string }>>(`/api/ingredients/search?q=${encodeURIComponent(normalizedName)}`)
+    if (existing?.length) {
+      ing.ingredientId = existing[0].id
+      return
+    }
+
+    const created = await $fetch<{ id: string }>('/api/ingredients', {
+      method: 'POST',
+      body: {
+        name: normalizedName
+      }
+    })
+
+    ing.ingredientId = created.id
+  } catch (error) {
+    console.error('Failed to persist extracted ingredient:', error)
+  }
+}
+
+const hydrateExtractedIngredients = async () => {
+  const tasks = state.ingredients
+    .map((ingredient, index) => ({ index, name: ingredient.ingredientName }))
+    .filter(item => item.name.trim())
+
+  if (tasks.length === 0) {
+    return
+  }
+
+  hydratingPrefilledIngredients.value = true
+  try {
+    for (const task of tasks) {
+      await persistIngredientForRow(task.index, task.name)
+    }
+  } finally {
+    hydratingPrefilledIngredients.value = false
   }
 }
 
@@ -975,6 +1106,7 @@ const extractAndPrefill = async () => {
     })
 
     mergeExtractedRecipe(extracted, extractionApplyMode.value)
+    void hydrateExtractedIngredients()
 
     const extractedIngredientCount = Array.isArray(extracted.ingredients) ? extracted.ingredients.length : 0
     const extractedStepCount = Array.isArray(extracted.steps) ? extracted.steps.length : 0
@@ -998,6 +1130,24 @@ const extractAndPrefill = async () => {
     extractingRecipe.value = false
   }
 }
+
+watch(extractionPreviewFile, (nextFile) => {
+  if (extractionPreviewUrl.value) {
+    URL.revokeObjectURL(extractionPreviewUrl.value)
+    extractionPreviewUrl.value = null
+  }
+
+  if (nextFile instanceof File) {
+    extractionPreviewUrl.value = URL.createObjectURL(nextFile)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (extractionPreviewUrl.value) {
+    URL.revokeObjectURL(extractionPreviewUrl.value)
+    extractionPreviewUrl.value = null
+  }
+})
 
 // Watch for file selection changes and upload automatically
 watch(selectedFile, async (files) => {
