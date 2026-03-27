@@ -208,6 +208,137 @@ const normalizeImageMimeType = (imageMimeType?: string): string => {
   return 'image/jpeg'
 }
 
+const EXTRACTION_SEED = 424242
+const EXTRACTION_TEMPERATURE = 0.1
+const EXTRACTION_TOP_P = 0.1
+
+const RECIPE_RESPONSE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', maxLength: 240 },
+    description: { type: 'string', maxLength: 5000 },
+    servings: { type: 'number' },
+    ingredients: {
+      type: 'array',
+      maxItems: 80,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          amount: { type: 'string', maxLength: 100 },
+          unit: { type: 'string', maxLength: 60 },
+          ingredientName: { type: 'string', maxLength: 240 },
+          notes: { type: 'string', maxLength: 400 }
+        },
+        required: ['amount', 'unit', 'ingredientName', 'notes']
+      }
+    },
+    steps: {
+      type: 'array',
+      maxItems: 60,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string', maxLength: 200 },
+          content: { type: 'string', maxLength: 4000 }
+        },
+        required: ['title', 'content']
+      }
+    },
+    tags: {
+      type: 'array',
+      maxItems: 30,
+      items: { type: 'string', maxLength: 80 }
+    },
+    source: { type: 'string', maxLength: 500 }
+  },
+  required: ['title', 'description', 'ingredients', 'steps', 'tags', 'source']
+}
+
+const parseAiRecipeJson = (response: any): ExtractedRecipe => {
+  let responseText: string
+  if (typeof response === 'string') {
+    responseText = response
+  } else if (response?.result?.response) {
+    responseText = response.result.response
+  } else if (response?.response) {
+    responseText = response.response
+  } else if (response?.text) {
+    responseText = response.text
+  } else {
+    responseText = JSON.stringify(response)
+  }
+
+  let jsonText = responseText.trim()
+  if (jsonText.startsWith('```json')) {
+    jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+  } else if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '')
+  }
+
+  const jsonStartIndex = jsonText.indexOf('{')
+  if (jsonStartIndex > 0) {
+    jsonText = jsonText.substring(jsonStartIndex)
+  }
+
+  let braceCount = 0
+  let jsonEndIndex = -1
+  for (let i = 0; i < jsonText.length; i++) {
+    if (jsonText[i] === '{') braceCount++
+    if (jsonText[i] === '}') {
+      braceCount--
+      if (braceCount === 0) {
+        jsonEndIndex = i + 1
+        break
+      }
+    }
+  }
+
+  if (jsonEndIndex > 0 && jsonEndIndex < jsonText.length) {
+    jsonText = jsonText.substring(0, jsonEndIndex)
+  }
+
+  try {
+    return JSON.parse(jsonText)
+  } catch {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0])
+      } catch {
+        return parseTextResponse(responseText)
+      }
+    }
+    return parseTextResponse(responseText)
+  }
+}
+
+const getIngredientAnomalyStats = (ingredients: ExtractedRecipe['ingredients']) => {
+  const isBadName = (name: string) => {
+    const n = name.trim().toLowerCase()
+    if (!n) return true
+    if (!/[a-z]/i.test(n)) return true
+    if (/^\(?see\s+pages?\s+\d+/i.test(n)) return true
+    if (/^\(?see\s+page\s+\d+/i.test(n)) return true
+    if (/^\(?page\s+\d+/i.test(n)) return true
+    if (/^[().,\-/\d\s]+$/.test(n)) return true
+    return false
+  }
+
+  const total = ingredients.length
+  const bad = ingredients.filter(ing => isBadName(ing.ingredientName)).length
+  const ratio = total > 0 ? bad / total : 0
+  return { total, bad, ratio }
+}
+
+const shouldRunCorrectionPass = (recipe: ExtractedRecipe) => {
+  const stats = getIngredientAnomalyStats(recipe.ingredients)
+  if (stats.total < 2) return false
+  return stats.ratio >= 0.25
+}
+
 export async function extractRecipeFromImage(imageBase64: string, event?: any, imageMimeType?: string): Promise<ExtractedRecipe> {
   // Get AI client (binding when event provided in production, else gateway/token for local)
   const ai = await getAIClient(event)
@@ -215,50 +346,34 @@ export async function extractRecipeFromImage(imageBase64: string, event?: any, i
 
   // Create a detailed prompt for recipe extraction
   // IMPORTANT: The prompt must explicitly instruct the model to analyze the IMAGE
-  const prompt = `You are a recipe extraction assistant.
-You are given ONE IMAGE containing a recipe. Extract ONLY information visible in the image.
-Do not invent or infer missing ingredients/steps that are not present.
+  const prompt = `You are extracting a recipe from ONE image.
+Return JSON only. No markdown. No code fences.
 
-Return STRICT JSON only (no markdown, no prose, no code fences). Use this exact top-level shape:
-{
-  "title": string,
-  "description": string,
-  "servings": number,
-  "ingredients": [
-    {
-      "amount": string,
-      "unit": string,
-      "ingredientName": string,
-      "notes": string
-    }
-  ],
-  "steps": [
-    {
-      "title": string,
-      "content": string
-    }
-  ],
-  "tags": string[],
-  "source": string
-}
+WORKFLOW (must follow):
+Phase A) Read and transcribe visible ingredient lines and step text mentally.
+Phase B) Convert those lines into the schema fields.
 
-STRICT RULES:
-1) Always return all top-level keys shown above.
-2) If a value is not visible, use:
-   - empty string for strings
-   - empty array for arrays
-   - omit "servings" OR set it to 0 if unknown
-3) For servings ranges like "2-3" or "4-6", use the lower integer.
-4) Ingredients:
-   - Keep "amount" and "ingredientName" exactly as written where possible.
-   - Use short canonical units when clear: cups, tbsp, tsp, grams, kg, oz, lb, ml, l, pieces.
-   - Put preparation text into "notes" (e.g. chopped, diced, softened).
-5) Steps:
-   - "content" must contain the instruction text.
-   - "title" should be a short meaningful title.
-   - If no title is shown, generate a concise action title from the instruction text (e.g. "Mix dry ingredients", "Bake until golden"), never just a number.
-6) Keep ordering as shown in the image.
-7) Output must be valid JSON parseable by JSON.parse.`
+FIELD MAPPING RULES FOR INGREDIENTS:
+- amount: numeric quantity only when possible (e.g. "250", "1/2", "2.5")
+- unit: canonical short unit when clear: cups, tbsp, tsp, grams, kg, oz, lb, ml, l, pieces
+- ingredientName: ingredient itself only (never page references, never pure prep words)
+- notes: leftovers such as dual units, references, prep info, qualifiers
+- For "250 g/9 oz rice noodles": amount="250", unit="grams", ingredientName="rice noodles", notes includes "9 oz"
+- For "(see page 25)": put in notes, never ingredientName
+- For prep text (chopped, roughly, fresh): move to notes
+- If an ingredient title is ambiguous, prefer preserving uncertainty in notes, not in ingredientName
+
+STEP RULES:
+- content contains full instruction text
+- title is concise and meaningful
+- if no explicit title exists, infer from instruction content (never numeric-only titles)
+
+GENERAL RULES:
+- Extract only what is visible
+- Keep source order
+- Keep all top-level keys present
+- If unknown: use empty string/empty array
+- servings can be omitted or set to 0 when unknown; for ranges use the lower integer`
 
   try {
     // Use a vision-capable model
@@ -266,10 +381,6 @@ STRICT RULES:
     // Check Workers AI documentation for the correct format for vision models
     // For now, we'll use a format that should work with most models
     
-    // Convert base64 to buffer for potential image input
-    const imageBuffer = Buffer.from(imageBase64, 'base64')
-    
-    // Try different API formats based on what Workers AI supports
     let response: any
     
     // Use vision-capable model - required for image processing
@@ -315,7 +426,14 @@ STRICT RULES:
             ]
           }
         ],
-        max_tokens: 2000
+        max_tokens: 2400,
+        temperature: EXTRACTION_TEMPERATURE,
+        top_p: EXTRACTION_TOP_P,
+        seed: EXTRACTION_SEED,
+        response_format: {
+          type: 'json_schema',
+          json_schema: RECIPE_RESPONSE_SCHEMA
+        }
       })
     } catch (error: any) {
       // Check if it's a license agreement error
@@ -328,79 +446,42 @@ STRICT RULES:
       throw error
     }
 
-    // Parse the response
-    let extractedData: ExtractedRecipe
+    const extractedData = parseAiRecipeJson(response)
+    let normalized = normalizeExtractedRecipe(extractedData)
 
-    // The response might be text that needs parsing
-    // Handle nested structure: response.result.response (from AI Gateway)
-    let responseText: string
-    if (typeof response === 'string') {
-      responseText = response
-    } else if (response?.result?.response) {
-      responseText = response.result.response
-    } else if (response?.response) {
-      responseText = response.response
-    } else if (response?.text) {
-      responseText = response.text
-    } else {
-      responseText = JSON.stringify(response)
-    }
+    if (shouldRunCorrectionPass(normalized)) {
+      try {
+        const correctionPrompt = `Repair this extracted recipe JSON so ingredient fields are consistent.
+Return only corrected JSON with the same schema keys.
+Rules:
+- ingredientName must not contain page references (e.g. see page 25)
+- amount should contain quantity only when possible
+- unit should be canonical (cups, tbsp, tsp, grams, kg, oz, lb, ml, l, pieces)
+- notes should carry references/preparation/extra qualifiers
+- keep original meaning and ordering
+JSON to repair:
+${JSON.stringify(normalized)}`
 
-    // Try to extract JSON from the response
-    // Remove markdown code blocks if present
-    let jsonText = responseText.trim()
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '')
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '')
-    }
+        const correctionResponse = await ai.run(visionModel, {
+          messages: [{ role: 'user', content: correctionPrompt }],
+          max_tokens: 1800,
+          temperature: EXTRACTION_TEMPERATURE,
+          top_p: EXTRACTION_TOP_P,
+          seed: EXTRACTION_SEED,
+          response_format: {
+            type: 'json_schema',
+            json_schema: RECIPE_RESPONSE_SCHEMA
+          }
+        })
 
-    // Try to extract JSON object from text that might have explanatory text before it
-    // Look for the first { that starts a JSON object
-    let jsonStartIndex = jsonText.indexOf('{')
-    if (jsonStartIndex > 0) {
-      jsonText = jsonText.substring(jsonStartIndex)
-    }
-
-    // Try to find the matching closing brace to extract complete JSON
-    // This handles cases where there's text after the JSON too
-    let braceCount = 0
-    let jsonEndIndex = -1
-    for (let i = 0; i < jsonText.length; i++) {
-      if (jsonText[i] === '{') braceCount++
-      if (jsonText[i] === '}') {
-        braceCount--
-        if (braceCount === 0) {
-          jsonEndIndex = i + 1
-          break
-        }
-      }
-    }
-    
-    if (jsonEndIndex > 0 && jsonEndIndex < jsonText.length) {
-      jsonText = jsonText.substring(0, jsonEndIndex)
-    }
-
-    try {
-      extractedData = JSON.parse(jsonText)
-    } catch (parseError: any) {
-      // Try a more aggressive JSON extraction - look for JSON object with balanced braces
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        try {
-          extractedData = JSON.parse(jsonMatch[0])
-        } catch (regexParseError: any) {
-          // If JSON parsing fails, try to extract structured data from text
-          // This is a fallback for when the model returns formatted text instead of JSON
-          extractedData = parseTextResponse(responseText)
-        }
-      } else {
-        extractedData = parseTextResponse(responseText)
+        const corrected = parseAiRecipeJson(correctionResponse)
+        normalized = normalizeExtractedRecipe(corrected)
+      } catch {
+        // Keep first-pass normalized data if correction pass fails.
       }
     }
 
-    // Validate and normalize the extracted data
-    return normalizeExtractedRecipe(extractedData)
+    return normalized
   } catch (error: any) {
     const originalErrorDetail = normalizeErrorDetail(
       error?.data?.detail || error?.statusMessage || error?.message,
@@ -522,6 +603,141 @@ function parseTextResponse(text: string): ExtractedRecipe {
  * Normalize and validate extracted recipe data
  */
 function normalizeExtractedRecipe(data: any): ExtractedRecipe {
+  const unitMap: Record<string, string> = {
+    g: 'grams',
+    gram: 'grams',
+    grams: 'grams',
+    kg: 'kg',
+    kilogram: 'kg',
+    kilograms: 'kg',
+    oz: 'oz',
+    ounce: 'oz',
+    ounces: 'oz',
+    lb: 'lb',
+    pound: 'lb',
+    pounds: 'lb',
+    ml: 'ml',
+    milliliter: 'ml',
+    milliliters: 'ml',
+    l: 'l',
+    litre: 'l',
+    litres: 'l',
+    liter: 'l',
+    liters: 'l',
+    tbsp: 'tbsp',
+    tablespoon: 'tbsp',
+    tablespoons: 'tbsp',
+    tsp: 'tsp',
+    teaspoon: 'tsp',
+    teaspoons: 'tsp',
+    cup: 'cups',
+    cups: 'cups',
+    piece: 'pieces',
+    pieces: 'pieces',
+    clove: 'pieces',
+    cloves: 'pieces'
+  }
+  const prepWords = ['chopped', 'diced', 'sliced', 'minced', 'fresh', 'dried', 'roughly', 'finely', 'grated', 'crushed', 'optional']
+  const appendNote = (a?: string, b?: string) => [a, b].filter(Boolean).join(', ').replace(/\s+/g, ' ').trim()
+  const canonicalizeUnit = (value: string) => unitMap[value.trim().toLowerCase()] || value.trim().toLowerCase()
+  const hasLetters = (value: string) => /[a-z]/i.test(value)
+  const isBadIngredientName = (value: string) => {
+    const name = value.trim()
+    if (!name || !hasLetters(name)) return true
+    if (/^\(?see\s+pages?\s+\d+/i.test(name)) return true
+    if (/^\(?page\s+\d+/i.test(name)) return true
+    if (/^[().,\-/\d\s]+$/.test(name)) return true
+    return false
+  }
+  const moveReferenceTokensToNotes = (name: string, notes?: string) => {
+    const referenceMatch = name.match(/\((?:see\s+)?pages?\s+\d+(?:[-–]\d+)?\)/i) || name.match(/\((?:see\s+)?page\s+\d+\)/i)
+    if (!referenceMatch) return { name, notes }
+    const cleanedName = name.replace(referenceMatch[0], '').replace(/\s+/g, ' ').trim().replace(/,$/, '')
+    return { name: cleanedName, notes: appendNote(notes, referenceMatch[0]) }
+  }
+  const movePrepTokensToNotes = (name: string, notes?: string) => {
+    let cleaned = name
+    const found: string[] = []
+    for (const prep of prepWords) {
+      const re = new RegExp(`\\b${prep}\\b`, 'gi')
+      if (re.test(cleaned)) {
+        found.push(prep)
+        cleaned = cleaned.replace(re, ' ')
+      }
+    }
+    cleaned = cleaned.replace(/\s+/g, ' ').trim().replace(/^[,.\-]+|[,.\-]+$/g, '')
+    return { name: cleaned, notes: found.length ? appendNote(notes, found.join(' ')) : notes }
+  }
+  const normaliseAmountAndUnit = (rawAmount: string, rawUnit: string, rawName: string, rawNotes?: string) => {
+    let amount = rawAmount.trim()
+    let unit = canonicalizeUnit(rawUnit || '')
+    let ingredientName = rawName.trim()
+    let notes = rawNotes?.trim()
+
+    const splitAmount = amount.match(/^([\d./\s-]+)\s*(g|kg|oz|lb|ml|l|cups?|tbsp|tsp|teaspoons?|tablespoons?)\b(?:\s*\/\s*([^,]+))?/i)
+    if (splitAmount) {
+      amount = splitAmount[1].trim()
+      unit = canonicalizeUnit(splitAmount[2])
+      if (splitAmount[3]) {
+        notes = appendNote(notes, splitAmount[3].trim())
+      }
+    }
+
+    const amountWithWordUnit = amount.match(/^([\d./\s-]+)\s+([a-zA-Z]+)$/)
+    if (amountWithWordUnit && (!unit || unit === 'pieces')) {
+      amount = amountWithWordUnit[1].trim()
+      unit = canonicalizeUnit(amountWithWordUnit[2])
+    }
+
+    if (unit.includes('/') && hasLetters(unit)) {
+      const parts = unit.split('/')
+      unit = canonicalizeUnit(parts[0] || '')
+      notes = appendNote(notes, parts.slice(1).join('/').trim())
+    }
+
+    if (/cloves?/i.test(rawUnit) && (isBadIngredientName(ingredientName) || prepWords.includes(ingredientName.toLowerCase()))) {
+      const maybeName = rawUnit.replace(/cloves?/ig, '').trim()
+      if (maybeName) {
+        notes = appendNote(notes, ingredientName)
+        ingredientName = maybeName
+      }
+      unit = 'pieces'
+    }
+
+    if (!unit) {
+      unit = 'pieces'
+    }
+
+    return { amount, unit, ingredientName, notes }
+  }
+  const repairIngredientFields = (ing: any) => {
+    let amount = String(ing.amount || ing.quantity || '').trim()
+    let unit = String(ing.unit || '').trim()
+    let ingredientName = String(ing.ingredientName || ing.name || ing.ingredient || '').trim()
+    let notes = typeof ing.notes === 'string' ? ing.notes.trim() : undefined
+
+    const normalized = normaliseAmountAndUnit(amount, unit, ingredientName, notes)
+    amount = normalized.amount
+    unit = normalized.unit
+    ingredientName = normalized.ingredientName
+    notes = normalized.notes
+
+    const withRefs = moveReferenceTokensToNotes(ingredientName, notes)
+    ingredientName = withRefs.name
+    notes = withRefs.notes
+
+    const withPrep = movePrepTokensToNotes(ingredientName, notes)
+    ingredientName = withPrep.name
+    notes = withPrep.notes
+
+    if (isBadIngredientName(ingredientName)) {
+      if (!notes) notes = ingredientName
+      ingredientName = ''
+    }
+
+    return { amount, unit: canonicalizeUnit(unit) || 'pieces', ingredientName, notes }
+  }
+
   const deriveStepTitle = (rawTitle: unknown, rawContent: unknown, index: number): string => {
     const title = String(rawTitle || '').trim()
     const content = String(rawContent || '').trim()
@@ -579,163 +795,7 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
   if (Array.isArray(data.ingredients)) {
     normalized.ingredients = data.ingredients
       .filter((ing: any) => ing && typeof ing === 'object')
-      .map((ing: any) => {
-        let amount = String(ing.amount || ing.quantity || '').trim()
-        let unit = String(ing.unit || '').trim()
-        let ingredientName = String(ing.ingredientName || ing.name || ing.ingredient || '').trim()
-        let notes = typeof ing.notes === 'string' ? ing.notes.trim() : undefined
-
-        // Unit normalization map (abbreviation -> full name)
-        const unitMap: Record<string, string> = {
-          'g': 'grams',
-          'kg': 'kg',
-          'oz': 'oz',
-          'lb': 'lb',
-          'ml': 'ml',
-          'l': 'l',
-          'tbsp': 'tbsp',
-          'tsp': 'tsp',
-          'cups': 'cups',
-          'cup': 'cups',
-          'pieces': 'pieces',
-          'piece': 'pieces',
-          'cloves': 'pieces', // "3 garlic cloves" -> 3 pieces
-          'clove': 'pieces'
-        }
-
-        // Common units for validation
-        const commonUnits = ['cups', 'tbsp', 'tsp', 'grams', 'kg', 'oz', 'lb', 'ml', 'l', 'pieces', 'piece', 'tablespoon', 'teaspoon', 'cup', 'pound', 'ounce', 'gram', 'kilogram', 'milliliter', 'liter', 'litre', 'cloves', 'clove']
-
-        // Preparation keywords to extract from ingredient names
-        const preparationKeywords = ['chopped', 'diced', 'sliced', 'finely sliced', 'minced', 'ground', 'fresh', 'dried', 'optional', 'at room temperature', 'warm', 'cold', 'softened', 'melted', 'crushed', 'grated', 'shredded', 'julienned', 'cubed', 'slivered']
-
-        // Parse combined amount/unit strings like "250 g/9 oz" or "1 tsp" or "3 garlic cloves"
-        // Try to extract numeric amount and unit from the amount field
-        const originalAmount = amount
-        if (amount && !unit) {
-          // Pattern 1: "3 garlic cloves" - number followed by ingredient name with "cloves"
-          const clovesMatch = amount.match(/^([\d./\s-]+)\s+(.+?)\s+cloves?/i)
-          if (clovesMatch) {
-            amount = clovesMatch[1].trim()
-            unit = 'pieces'
-            if (!ingredientName) {
-              ingredientName = clovesMatch[2].trim()
-            }
-          } else {
-            // Pattern 2: Extract number followed by unit (e.g., "250 g", "1 tsp", "3 cloves")
-            const standardUnitMatch = amount.match(/^([\d./\s-]+)\s+([a-zA-Z]+(?:\s*\/\s*[\d./\s]+\s*[a-zA-Z]+)?)/)
-            if (standardUnitMatch) {
-              const extractedAmount = standardUnitMatch[1].trim()
-              const extractedUnit = standardUnitMatch[2].trim()
-              const extractedUnitLower = extractedUnit.toLowerCase()
-              
-              // Check if it's a real unit (including "cloves" which means "pieces")
-              const isRealUnit = commonUnits.some(u => extractedUnitLower === u || extractedUnitLower.startsWith(u + ' ') || extractedUnitLower.endsWith(' ' + u))
-              
-              if (isRealUnit || extractedUnitLower === 'cloves' || extractedUnitLower === 'clove') {
-                amount = extractedAmount
-                // Normalize "cloves"/"clove" to "pieces"
-                if (extractedUnitLower === 'cloves' || extractedUnitLower === 'clove') {
-                  unit = 'pieces'
-                } else {
-                  unit = extractedUnitLower
-                }
-                
-                // Get remaining text after amount+unit (could be ingredient name or description)
-                const remaining = originalAmount.substring(standardUnitMatch[0].length).trim()
-                if (remaining && !ingredientName) {
-                  // If remaining text looks like it starts with an ingredient name, use it
-                  ingredientName = remaining
-                }
-              } else {
-                // Pattern 3: Just a number, assume pieces
-                const numberMatch = amount.match(/^([\d./\s-]+)(?:\s+(.+))?$/)
-                if (numberMatch && !isNaN(parseFloat(numberMatch[1]))) {
-                  amount = numberMatch[1].trim()
-                  unit = 'pieces'
-                  if (numberMatch[2] && !ingredientName) {
-                    ingredientName = numberMatch[2].trim()
-                  }
-                }
-              }
-            } else {
-              // Pattern 4: Just a number, assume pieces
-              const numberMatch = amount.match(/^([\d./\s-]+)(?:\s+(.+))?$/)
-              if (numberMatch && !isNaN(parseFloat(numberMatch[1]))) {
-                amount = numberMatch[1].trim()
-                unit = 'pieces'
-                if (numberMatch[2] && !ingredientName) {
-                  ingredientName = numberMatch[2].trim()
-                }
-              }
-            }
-          }
-        }
-
-        // Normalize unit abbreviations to full names
-        const unitLower = unit.toLowerCase()
-        if (unitMap[unitLower]) {
-          unit = unitMap[unitLower]
-        }
-
-        // Extract preparation descriptions from ingredient name
-        if (ingredientName) {
-          const nameLower = ingredientName.toLowerCase()
-          const foundPreparations: string[] = []
-          
-          for (const prep of preparationKeywords) {
-            if (nameLower.includes(prep)) {
-              foundPreparations.push(prep)
-              // Remove preparation from ingredient name
-              const regex = new RegExp(`\\b${prep}\\b`, 'gi')
-              ingredientName = ingredientName.replace(regex, '').trim()
-              // Clean up extra commas and spaces
-              ingredientName = ingredientName.replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim()
-            }
-          }
-          
-          if (foundPreparations.length > 0) {
-            const prepText = foundPreparations.join(', ')
-            if (!notes) {
-              notes = prepText
-            } else {
-              notes = `${prepText}, ${notes}`
-            }
-          }
-        }
-
-        // If unit field contains ingredient description (not a real unit), move it to notes
-        const unitLowerCheck = unit.toLowerCase()
-        const isRealUnitCheck = commonUnits.some(u => unitLowerCheck === u || unitLowerCheck.startsWith(u + ' ') || unitLowerCheck.endsWith(' ' + u))
-        
-        if (unit && !isRealUnitCheck && unit.length > 3) {
-          // Unit field likely contains ingredient description, move to notes
-          if (!notes) {
-            notes = unit
-          } else {
-            notes = `${unit}, ${notes}`
-          }
-          unit = ''
-        }
-
-        // If ingredientName is empty but unit contains ingredient info, use unit as name
-        if (!ingredientName && unit && !isRealUnitCheck) {
-          ingredientName = unit
-          unit = ''
-        }
-
-        // Ensure we have a unit default
-        if (!unit) {
-          unit = 'pieces'
-        }
-
-        return {
-          amount,
-          unit,
-          ingredientName,
-          notes
-        }
-      })
+      .map((ing: any) => repairIngredientFields(ing))
       .filter((ing: any) => ing.ingredientName) // Only keep ingredients with names
   }
 

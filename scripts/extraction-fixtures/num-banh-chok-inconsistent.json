@@ -1,0 +1,42 @@
+{
+  "name": "num-banh-chok-inconsistent",
+  "output": {
+    "title": "Num banh chok Cambodia",
+    "description": "Rice noodles' is the generic name given to num banh chok, a classic Cambodian soup traditionally served at breakfast or as an afternoon snack.",
+    "servings": 4,
+    "ingredients": [
+      {
+        "amount": "250",
+        "unit": "pieces",
+        "ingredientName": "rice stick noodles",
+        "notes": "g/9 oz., dried, (see page 14)"
+      },
+      {
+        "amount": "250 ml/1 cup",
+        "unit": "pieces",
+        "ingredientName": "(see page 25)",
+        "notes": "Chicken stock"
+      },
+      {
+        "amount": "2 teaspoons",
+        "unit": "pieces",
+        "ingredientName": "(see pages 20-21)",
+        "notes": "grated palm sugar"
+      },
+      {
+        "amount": "2",
+        "unit": "garlic cloves",
+        "ingredientName": "roughly",
+        "notes": "chopped"
+      }
+    ],
+    "steps": [
+      {
+        "title": "1",
+        "content": "Soak the noodles in a bowlful of hot water for 20 minutes until softened."
+      }
+    ],
+    "tags": [],
+    "source": "NOODLE SOUPS 99"
+  }
+}
