@@ -358,127 +358,253 @@ const getExtractionQualityScore = (recipe: ExtractedRecipe) => {
 
 const hasMeaningfulExtraction = (recipe: ExtractedRecipe) => {
   const quality = getExtractionQualityScore(recipe)
-  return quality.validIngredients > 0 || quality.meaningfulSteps > 0
+  const hasIntroOnlyContent = Boolean(recipe.title?.trim()) && Boolean(recipe.description?.trim()) && (recipe.description?.trim().length || 0) >= 80
+  return quality.validIngredients > 0 || quality.meaningfulSteps > 0 || hasIntroOnlyContent
+}
+
+interface TranscribedRecipeText {
+  title?: string
+  description?: string
+  servings?: number
+  ingredientsText?: string
+  methodText?: string
+  tags?: string[]
+  source?: string
+}
+
+const TRANSCRIPTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', maxLength: 240 },
+    description: { type: 'string', maxLength: 5000 },
+    servings: { type: 'number' },
+    ingredientsText: { type: 'string', maxLength: 12000 },
+    methodText: { type: 'string', maxLength: 18000 },
+    tags: { type: 'array', maxItems: 30, items: { type: 'string', maxLength: 80 } },
+    source: { type: 'string', maxLength: 500 }
+  },
+  required: ['title', 'description', 'ingredientsText', 'methodText', 'tags', 'source']
+}
+
+const splitLines = (text: string) => text
+  .split(/\r?\n/)
+  .map(line => line.replace(/^[-*•\d.)\s]+/, '').trim())
+  .filter(Boolean)
+
+const parseIngredientLine = (line: string) => {
+  const cleaned = line.replace(/\s+/g, ' ').trim()
+  const measurementMatch = cleaned.match(/^([\d¼½¾/.\s-]+)\s*(cups?|cup|tbsp|tsp|tablespoons?|teaspoons?|grams?|g|kg|oz|lb|ml|l|litres?|liters?|pieces?|cloves?)?\s*(.*)$/i)
+  if (!measurementMatch) {
+    return {
+      amount: '',
+      unit: 'pieces',
+      ingredientName: cleaned,
+      notes: ''
+    }
+  }
+
+  const amount = (measurementMatch[1] || '').trim()
+  const unitRaw = (measurementMatch[2] || '').trim().toLowerCase()
+  const rest = (measurementMatch[3] || '').trim()
+
+  const referenceMatch = rest.match(/\((?:see\s+)?pages?\s+\d+(?:[-–]\d+)?\)/i)
+  const reference = referenceMatch ? referenceMatch[0] : ''
+  const nameWithoutRef = reference ? rest.replace(reference, '').replace(/\s+/g, ' ').trim() : rest
+
+  const commaIdx = nameWithoutRef.indexOf(',')
+  const ingredientName = (commaIdx >= 0 ? nameWithoutRef.slice(0, commaIdx) : nameWithoutRef).trim()
+  const trailingNotes = (commaIdx >= 0 ? nameWithoutRef.slice(commaIdx + 1) : '').trim()
+
+  return {
+    amount,
+    unit: unitRaw || 'pieces',
+    ingredientName,
+    notes: [trailingNotes, reference].filter(Boolean).join(', ').trim()
+  }
+}
+
+const parseMethodTextToSteps = (methodText: string) => {
+  const numbered = methodText.match(/(?:^|\n)\s*\d+[.)]\s+/)
+  const chunks = numbered
+    ? methodText.split(/\n\s*\d+[.)]\s+/).map(chunk => chunk.trim()).filter(Boolean)
+    : methodText.split(/\n\s*\n/).map(chunk => chunk.trim()).filter(Boolean)
+
+  return chunks.map((content, index) => ({
+    title: `Step ${index + 1}`,
+    content
+  }))
+}
+
+const structureFromTranscript = (transcript: TranscribedRecipeText): ExtractedRecipe => {
+  const ingredientLines = splitLines(String(transcript.ingredientsText || ''))
+  const ingredients = ingredientLines.map(parseIngredientLine)
+  const steps = parseMethodTextToSteps(String(transcript.methodText || ''))
+  return {
+    title: String(transcript.title || '').trim(),
+    description: String(transcript.description || '').trim(),
+    servings: transcript.servings,
+    ingredients,
+    steps,
+    tags: Array.isArray(transcript.tags) ? transcript.tags : [],
+    source: String(transcript.source || '').trim()
+  }
+}
+
+const runVisionPrompt = async (ai: any, visionModel: string, prompt: string, imageDataUrl: string, responseFormat: any, maxTokens = 2200) => {
+  return ai.run(visionModel, {
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ]
+      }
+    ],
+    max_tokens: maxTokens,
+    temperature: EXTRACTION_TEMPERATURE,
+    top_p: EXTRACTION_TOP_P,
+    seed: EXTRACTION_SEED,
+    response_format: responseFormat
+  })
 }
 
 export async function extractRecipeFromImage(imageBase64: string, event?: any, imageMimeType?: string): Promise<ExtractedRecipe> {
-  // Get AI client (binding when event provided in production, else gateway/token for local)
   const ai = await getAIClient(event)
   const normalizedMimeType = normalizeImageMimeType(imageMimeType)
+  const imageDataUrl = `data:${normalizedMimeType};base64,${imageBase64}`
+  const visionModel = '@cf/meta/llama-3.2-11b-vision-instruct'
 
-  // Create a detailed prompt for recipe extraction
-  // IMPORTANT: The prompt must explicitly instruct the model to analyze the IMAGE
-  const prompt = `You are extracting a recipe from ONE image.
-Return JSON only. No markdown. No code fences.
+  const transcriptionPrompt = `You are an OCR recipe transcription assistant for cookbook pages.
+Return JSON only.
+Read the image and extract:
+- title
+- short description/introduction text if present
+- ingredientsText as newline-separated ingredient lines exactly as printed
+- methodText as newline-separated instruction paragraphs exactly as printed
+- servings when visible
+- tags as array if visible, otherwise []
+- source text if visible (book/section/page)
+Do not convert ingredients into fields yet.`
 
-WORKFLOW (must follow):
-Phase A) Read and transcribe visible ingredient lines and step text mentally.
-Phase B) Convert those lines into the schema fields.
+  const ingredientsOnlyPrompt = `Extract only ingredient lines from this image.
+Return JSON with keys: ingredientsText, title, source.
+- ingredientsText must be newline-separated ingredient lines exactly as printed.
+- If nothing is readable, return ingredientsText as empty string.`
 
-FIELD MAPPING RULES FOR INGREDIENTS:
-- amount: numeric quantity only when possible (e.g. "250", "1/2", "2.5")
-- unit: canonical short unit when clear: cups, tbsp, tsp, grams, kg, oz, lb, ml, l, pieces
-- ingredientName: ingredient itself only (never page references, never pure prep words)
-- notes: leftovers such as dual units, references, prep info, qualifiers
-- For "250 g/9 oz rice noodles": amount="250", unit="grams", ingredientName="rice noodles", notes includes "9 oz"
-- For "(see page 25)": put in notes, never ingredientName
-- For prep text (chopped, roughly, fresh): move to notes
-- If an ingredient title is ambiguous, prefer preserving uncertainty in notes, not in ingredientName
-
-STEP RULES:
-- content contains full instruction text
-- title is concise and meaningful
-- if no explicit title exists, infer from instruction content (never numeric-only titles)
-
-GENERAL RULES:
-- Extract only what is visible
-- Keep source order
-- Keep all top-level keys present
-- If unknown: use empty string/empty array
-- servings can be omitted or set to 0 when unknown; for ranges use the lower integer`
+  const stepsOnlyPrompt = `Extract only cooking method steps from this image.
+Return JSON with keys: methodText, title, source.
+- methodText must be newline-separated instruction paragraphs exactly as printed.
+- If nothing is readable, return methodText as empty string.`
 
   try {
-    // Use a vision-capable model
-    // Note: Cloudflare Workers AI API format may vary
-    // Check Workers AI documentation for the correct format for vision models
-    // For now, we'll use a format that should work with most models
-    
-    let response: any
-    
-    // Use vision-capable model - required for image processing
-    // Note: @cf/meta/llama-3.1-8b-instruct doesn't support vision and will ignore images
-    const visionModel = '@cf/meta/llama-3.2-11b-vision-instruct'
-    
-    // First, we must agree to the model's license terms
-    // This is required before using the vision model
     try {
-      // Send 'agree' to accept the license terms
       await ai.run(visionModel, {
-        messages: [
-          {
-            role: 'user',
-            content: 'agree'
-          }
-        ]
+        messages: [{ role: 'user', content: 'agree' }]
       })
-    } catch (agreeError: any) {
-      // If agreement fails, check if it's because we already agreed
-      // Error code 5016 means we need to agree, but if it's a different error, continue
-      // Continue - might already be agreed or will fail on actual request
-    }
-    
-    // Now use the vision model with the image
-    try {
-      // Use messages format with image_url (OpenAI-compatible format for vision)
-      response = await ai.run(visionModel, {
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: prompt
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:${normalizedMimeType};base64,${imageBase64}`
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 2400,
-        temperature: EXTRACTION_TEMPERATURE,
-        top_p: EXTRACTION_TOP_P,
-        seed: EXTRACTION_SEED,
-        response_format: {
-          type: 'json_schema',
-          json_schema: RECIPE_RESPONSE_SCHEMA
-        }
-      })
-    } catch (error: any) {
-      // Check if it's a license agreement error
-      if (error.statusCode === 5016 || error.message?.includes('Model Agreement')) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'Vision model requires license agreement. Please try again - the agreement should be accepted automatically on the first attempt.'
-        })
-      }
-      throw error
+    } catch {
+      // ignore: agreement may already be accepted
     }
 
-    const extractedData = parseAiRecipeJson(response)
-    const firstPassNormalized = normalizeExtractedRecipe(extractedData)
-    let normalized = firstPassNormalized
+    const transcriptionResponse = await runVisionPrompt(
+      ai,
+      visionModel,
+      transcriptionPrompt,
+      imageDataUrl,
+      { type: 'json_schema', json_schema: TRANSCRIPTION_SCHEMA },
+      2600
+    )
 
-    const firstPassStats = getIngredientAnomalyStats(firstPassNormalized.ingredients)
-    console.info('[extractRecipeFromImage] first-pass summary', {
-      ingredientCount: firstPassNormalized.ingredients.length,
-      stepCount: firstPassNormalized.steps.length,
-      badIngredientCount: firstPassStats.bad,
-      badIngredientRatio: firstPassStats.ratio
+    const transcribed = parseAiRecipeJson(transcriptionResponse) as TranscribedRecipeText
+    let structured = structureFromTranscript(transcribed)
+    let normalized = normalizeExtractedRecipe(structured)
+
+    console.info('[extractRecipeFromImage] transcript-first summary', {
+      ingredientLines: splitLines(String(transcribed.ingredientsText || '')).length,
+      methodBlocks: parseMethodTextToSteps(String(transcribed.methodText || '')).length,
+      ingredientCount: normalized.ingredients.length,
+      stepCount: normalized.steps.length
     })
+
+    if (!hasMeaningfulExtraction(normalized)) {
+      const ingredientsRetry = await runVisionPrompt(
+        ai,
+        visionModel,
+        ingredientsOnlyPrompt,
+        imageDataUrl,
+        {
+          type: 'json_schema',
+          json_schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              title: { type: 'string', maxLength: 240 },
+              ingredientsText: { type: 'string', maxLength: 12000 },
+              source: { type: 'string', maxLength: 500 }
+            },
+            required: ['ingredientsText', 'title', 'source']
+          }
+        },
+        1800
+      )
+      const iData = parseAiRecipeJson(ingredientsRetry) as TranscribedRecipeText
+      structured = {
+        ...structured,
+        title: structured.title || iData.title,
+        source: structured.source || iData.source,
+        ingredients: splitLines(String(iData.ingredientsText || '')).map(parseIngredientLine)
+      }
+      normalized = normalizeExtractedRecipe(structured)
+    }
+
+    if (!hasMeaningfulExtraction(normalized)) {
+      const stepsRetry = await runVisionPrompt(
+        ai,
+        visionModel,
+        stepsOnlyPrompt,
+        imageDataUrl,
+        {
+          type: 'json_schema',
+          json_schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              title: { type: 'string', maxLength: 240 },
+              methodText: { type: 'string', maxLength: 18000 },
+              source: { type: 'string', maxLength: 500 }
+            },
+            required: ['methodText', 'title', 'source']
+          }
+        },
+        1800
+      )
+      const sData = parseAiRecipeJson(stepsRetry) as TranscribedRecipeText
+      structured = {
+        ...structured,
+        title: structured.title || sData.title,
+        source: structured.source || sData.source,
+        steps: parseMethodTextToSteps(String(sData.methodText || ''))
+      }
+      normalized = normalizeExtractedRecipe(structured)
+    }
+
+    if (!hasMeaningfulExtraction(normalized)) {
+      // Last-chance retry with looser JSON object response.
+      const fallbackStructuredResponse = await runVisionPrompt(
+        ai,
+        visionModel,
+        `Extract recipe fields from this image. Return JSON object with keys title, description, ingredients, steps, tags, source, servings.`,
+        imageDataUrl,
+        { type: 'json_object' },
+        2200
+      )
+      const fallbackStructured = parseAiRecipeJson(fallbackStructuredResponse)
+      const fallbackNormalized = normalizeExtractedRecipe(fallbackStructured)
+      if (getExtractionQualityScore(fallbackNormalized).total > getExtractionQualityScore(normalized).total) {
+        normalized = fallbackNormalized
+      }
+    }
 
     if (shouldRunCorrectionPass(normalized)) {
       try {
@@ -507,18 +633,13 @@ ${JSON.stringify(normalized)}`
 
         const corrected = parseAiRecipeJson(correctionResponse)
         const correctedNormalized = normalizeExtractedRecipe(corrected)
-        const baseScore = getExtractionQualityScore(firstPassNormalized)
+        const baseScore = getExtractionQualityScore(normalized)
         const correctedScore = getExtractionQualityScore(correctedNormalized)
-
-        // Non-regression: only accept correction when it clearly improves output quality.
         if (correctedScore.total > baseScore.total) {
           normalized = correctedNormalized
-        } else {
-          normalized = firstPassNormalized
         }
       } catch {
-        // Keep first-pass normalized data if correction pass fails.
-        normalized = firstPassNormalized
+        // keep existing output
       }
     }
 
@@ -527,7 +648,7 @@ ${JSON.stringify(normalized)}`
         statusCode: 422,
         statusMessage: 'No extractable recipe content found in this image.',
         data: {
-          detail: 'AI could not confidently extract ingredients or steps. Try a brighter, closer crop with ingredients and method fully visible.'
+          detail: 'AI could not confidently extract ingredients or steps. Try scanning ingredients and method separately (two crops), with flat framing and even lighting.'
         }
       })
     }
@@ -539,17 +660,12 @@ ${JSON.stringify(normalized)}`
       'Unknown error',
       4000
     )
+
     if (error.statusCode === 429) {
-      throw createError({
-        statusCode: 429,
-        statusMessage: 'AI rate limit exceeded. Please try again later.'
-      })
+      throw createError({ statusCode: 429, statusMessage: 'AI rate limit exceeded. Please try again later.' })
     }
     if (error.statusCode === 402) {
-      throw createError({
-        statusCode: 402,
-        statusMessage: 'AI quota exceeded. Please check your plan limits.'
-      })
+      throw createError({ statusCode: 402, statusMessage: 'AI quota exceeded. Please check your plan limits.' })
     }
     if (error.statusCode === 422) {
       throw createError({
@@ -560,15 +676,15 @@ ${JSON.stringify(normalized)}`
         }
       })
     }
+
     const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600
       ? error.statusCode
       : 500
+
     throw createError({
       statusCode,
       statusMessage: 'Failed to extract recipe',
-      data: {
-        detail: originalErrorDetail
-      }
+      data: { detail: originalErrorDetail }
     })
   }
 }

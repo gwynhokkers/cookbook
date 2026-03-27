@@ -51,6 +51,16 @@
           </div>
         </UFormField>
 
+        <UFormField label="Optional method image (for two-column pages)">
+          <ImageSourcePicker
+            v-model="extractionMethodFile"
+            description="Optional: add a second photo focused on method/instructions to improve extraction quality."
+          />
+          <p v-if="extractionMethodCompressionNote" class="mt-2 text-xs text-muted">
+            {{ extractionMethodCompressionNote }}
+          </p>
+        </UFormField>
+
         <UFormField
           label="Apply mode"
           help="Fill empty keeps your existing values. Replace all overwrites title, description, ingredients, and steps."
@@ -634,6 +644,7 @@ const selectedFile = ref<any>(null)
 const uploadingFile = ref(false)
 const uploadError = ref<string | null>(null)
 const extractionFile = ref<any>(null)
+const extractionMethodFile = ref<any>(null)
 const extractionApplyMode = ref<ExtractionApplyMode>(props.isEdit ? 'fill-empty' : 'replace-all')
 const extractingRecipe = ref(false)
 const extractionError = ref<string | null>(null)
@@ -641,6 +652,7 @@ const extractionSummary = ref<string | null>(null)
 const hydratingPrefilledIngredients = ref(false)
 const extractionPreviewUrl = ref<string | null>(null)
 const extractionCompressionNote = ref<string | null>(null)
+const extractionMethodCompressionNote = ref<string | null>(null)
 const uploadCompressionNote = ref<string | null>(null)
 const isProcessingExtractionSelection = ref(false)
 const submitting = computed(() => Boolean(props.submitting))
@@ -1066,7 +1078,25 @@ const isSupportedExtractionImage = (mimeType: string) => {
 
 const clearExtractionFile = () => {
   extractionFile.value = null
+  extractionMethodFile.value = null
   extractionCompressionNote.value = null
+  extractionMethodCompressionNote.value = null
+}
+
+const runExtractionForFile = async (uploadFile: File) => {
+  const effectiveType = (uploadFile.type || inferMimeTypeFromName(uploadFile.name) || '').toLowerCase()
+
+  if (!isSupportedExtractionImage(effectiveType)) {
+    throw createError({ statusCode: 415, statusMessage: 'Unsupported image format. Please upload JPG, PNG, WEBP, or GIF.' })
+  }
+
+  const requestBody = new FormData()
+  requestBody.append('image', uploadFile)
+
+  return $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
+    method: 'POST',
+    body: requestBody
+  })
 }
 
 const extractAndPrefill = async () => {
@@ -1108,29 +1138,40 @@ const extractAndPrefill = async () => {
   extractingRecipe.value = true
 
   try {
-    const effectiveType = (uploadFile.type || inferMimeTypeFromName(uploadFile.name) || '').toLowerCase()
+    const extracted = await runExtractionForFile(uploadFile)
+    mergeExtractedRecipe(extracted, extractionApplyMode.value)
 
-    if (!isSupportedExtractionImage(effectiveType)) {
-      extractionError.value = 'Unsupported image format. Please upload JPG, PNG, WEBP, or GIF.'
-      return
+    const methodFile = getFirstFile(extractionMethodFile.value)
+    let methodExtractedIngredientCount = 0
+    let methodExtractedStepCount = 0
+
+    if (methodFile instanceof File && !isHeicLike(methodFile)) {
+      const optimizedMethodFile = await compressImageForUpload(methodFile, {
+        compressIfLargerThan: COMPRESS_IF_LARGER_THAN,
+        maxDimension: UPLOAD_MAX_DIMENSION,
+        jpegQuality: UPLOAD_JPEG_QUALITY
+      })
+      if (optimizedMethodFile !== methodFile) {
+        extractionMethodCompressionNote.value = `Method image optimised (${formatFileSize(methodFile.size)} -> ${formatFileSize(optimizedMethodFile.size)}).`
+      }
+      const methodExtracted = await runExtractionForFile(optimizedMethodFile)
+      mergeExtractedRecipe(methodExtracted, 'fill-empty')
+      methodExtractedIngredientCount = Array.isArray(methodExtracted.ingredients) ? methodExtracted.ingredients.length : 0
+      methodExtractedStepCount = Array.isArray(methodExtracted.steps) ? methodExtracted.steps.length : 0
     }
 
-    const requestBody = new FormData()
-    requestBody.append('image', uploadFile)
-
-    const extracted = await $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
-      method: 'POST',
-      body: requestBody
-    })
-
-    mergeExtractedRecipe(extracted, extractionApplyMode.value)
     void hydrateExtractedIngredients()
 
     const extractedIngredientCount = Array.isArray(extracted.ingredients) ? extracted.ingredients.length : 0
     const extractedStepCount = Array.isArray(extracted.steps) ? extracted.steps.length : 0
-    extractionSummary.value = `Prefill complete: ${extractedIngredientCount} ingredients and ${extractedStepCount} steps extracted.`
+    const totalIngredients = extractedIngredientCount + methodExtractedIngredientCount
+    const totalSteps = extractedStepCount + methodExtractedStepCount
+
+    extractionSummary.value = `Prefill complete: ${totalIngredients} ingredients and ${totalSteps} steps extracted.`
     extractionFile.value = null
+    extractionMethodFile.value = null
     extractionCompressionNote.value = null
+    extractionMethodCompressionNote.value = null
   } catch (error: any) {
     const detailMessage = typeof error?.data?.detail === 'string' ? error.data.detail : ''
     const rawMessage = detailMessage || error?.data?.statusMessage || error?.statusMessage || error?.message || ''
@@ -1143,7 +1184,7 @@ const extractAndPrefill = async () => {
     } else if (rawMessage.includes('quota exceeded')) {
       extractionError.value = 'AI scanning quota is exhausted. Please check your Cloudflare plan and limits.'
     } else if (rawMessage.includes('No extractable recipe content found')) {
-      extractionError.value = 'We could not confidently read this recipe page. Try a brighter photo, crop closer, and make sure both ingredients and steps are visible.'
+      extractionError.value = 'We could not confidently read this recipe page. Try two tighter crops: one for ingredients and one for method, with flat framing and even lighting.'
     } else {
       extractionError.value = rawMessage || 'Unable to extract recipe from image.'
     }
@@ -1183,6 +1224,32 @@ watch(extractionFile, async (files) => {
     if (compressed !== file) {
       extractionCompressionNote.value = `Image optimised for upload (${formatFileSize(file.size)} -> ${formatFileSize(compressed.size)}).`
       extractionFile.value = compressed
+    }
+  } finally {
+    isProcessingExtractionSelection.value = false
+  }
+})
+
+watch(extractionMethodFile, async (files) => {
+  if (!files || isProcessingExtractionSelection.value) {
+    return
+  }
+
+  const file = getFirstFile(files)
+  if (!(file instanceof File) || isHeicLike(file)) {
+    return
+  }
+
+  isProcessingExtractionSelection.value = true
+  try {
+    const compressed = await compressImageForUpload(file, {
+      compressIfLargerThan: COMPRESS_IF_LARGER_THAN,
+      maxDimension: UPLOAD_MAX_DIMENSION,
+      jpegQuality: UPLOAD_JPEG_QUALITY
+    })
+    if (compressed !== file) {
+      extractionMethodCompressionNote.value = `Method image optimised (${formatFileSize(file.size)} -> ${formatFileSize(compressed.size)}).`
+      extractionMethodFile.value = compressed
     }
   } finally {
     isProcessingExtractionSelection.value = false

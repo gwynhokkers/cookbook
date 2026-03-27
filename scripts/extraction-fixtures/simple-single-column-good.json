@@ -1,0 +1,52 @@
+{
+  "name": "simple-single-column-good",
+  "output": {
+    "title": "Sesame + tamarind aubergines with cracked wheat",
+    "description": "Typical Andhra-style dish with tamarind and sesame.",
+    "servings": 4,
+    "ingredients": [
+      {
+        "amount": "2",
+        "unit": "pieces",
+        "ingredientName": "large ripe tomatoes",
+        "notes": ""
+      },
+      {
+        "amount": "2",
+        "unit": "tbsp",
+        "ingredientName": "sesame seeds",
+        "notes": ""
+      },
+      {
+        "amount": "3",
+        "unit": "pieces",
+        "ingredientName": "garlic",
+        "notes": "cloves"
+      },
+      {
+        "amount": "2",
+        "unit": "tsp",
+        "ingredientName": "tamarind paste",
+        "notes": ""
+      },
+      {
+        "amount": "3",
+        "unit": "pieces",
+        "ingredientName": "medium aubergines",
+        "notes": "900g, cut into batons"
+      }
+    ],
+    "steps": [
+      {
+        "title": "Blend the sauce",
+        "content": "Place the tomatoes, sesame seeds, garlic, tamarind paste, cumin, coriander, chilli powder and salt into a blender and whizz to a sauce."
+      },
+      {
+        "title": "Cook the aubergines",
+        "content": "Put the oil into a large lidded frying pan over medium heat. Add the onion and fry until soft and golden. Add the sauce, then the aubergines and water. Cover and cook until tender."
+      }
+    ],
+    "tags": [],
+    "source": "Cookbook page 119"
+  }
+}
