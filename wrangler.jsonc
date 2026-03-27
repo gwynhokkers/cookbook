@@ -61,5 +61,9 @@
         "SKIP_DEPENDENCY_INSTALL": "true"
       }
     }
+  },
+  
+  "observability": {
+    "enabled": true
   }
 }
