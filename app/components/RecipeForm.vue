@@ -45,6 +45,9 @@
             <p class="text-xs text-muted">
               {{ extractionPreviewFileSizeText }}
             </p>
+            <p v-if="extractionCompressionNote" class="text-xs text-muted">
+              {{ extractionCompressionNote }}
+            </p>
           </div>
         </UFormField>
 
@@ -186,6 +189,9 @@
             <UIcon name="i-heroicons-arrow-path" class="animate-spin" />
             <span>Uploading image...</span>
           </div>
+          <p v-if="uploadCompressionNote" class="text-xs text-muted">
+            {{ uploadCompressionNote }}
+          </p>
 
           <UAlert
             v-if="uploadError"
@@ -462,6 +468,7 @@
 
 <script setup lang="ts">
 import { z } from 'zod'
+import { compressImageForUpload } from '../utils/imageCompression'
 
 const props = defineProps<{
   recipe?: any
@@ -549,6 +556,9 @@ interface ExtractedRecipeResponse {
 
 const MAX_EXTRACTION_FILE_SIZE_BYTES = 8 * 1024 * 1024
 const HEIC_EXTENSIONS = ['.heic', '.heif']
+const COMPRESS_IF_LARGER_THAN = 400 * 1024
+const UPLOAD_MAX_DIMENSION = 1600
+const UPLOAD_JPEG_QUALITY = 0.8
 
 // Load recipe ingredients if editing
 const loadRecipeIngredients = async () => {
@@ -630,6 +640,9 @@ const extractionError = ref<string | null>(null)
 const extractionSummary = ref<string | null>(null)
 const hydratingPrefilledIngredients = ref(false)
 const extractionPreviewUrl = ref<string | null>(null)
+const extractionCompressionNote = ref<string | null>(null)
+const uploadCompressionNote = ref<string | null>(null)
+const isProcessingExtractionSelection = ref(false)
 const submitting = computed(() => Boolean(props.submitting))
 const hasExtractionFile = computed(() => {
   if (!extractionFile.value) {
@@ -645,8 +658,7 @@ const isSubmitDisabled = computed(() => {
 })
 const extractionPreviewFile = computed(() => getFirstFile(extractionFile.value))
 const extractionPreviewFileName = computed(() => extractionPreviewFile.value?.name || '')
-const extractionPreviewFileSizeText = computed(() => {
-  const size = extractionPreviewFile.value?.size
+const formatFileSize = (size: number) => {
   if (!size || size < 0) {
     return ''
   }
@@ -657,6 +669,10 @@ const extractionPreviewFileSizeText = computed(() => {
     return `${(size / 1024).toFixed(1)} KB`
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+const extractionPreviewFileSizeText = computed(() => {
+  const size = extractionPreviewFile.value?.size
+  return formatFileSize(size || 0)
 })
 
 const addTag = () => {
@@ -1048,17 +1064,9 @@ const isSupportedExtractionImage = (mimeType: string) => {
   return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mimeType)
 }
 
-const materializeExtractionFile = async (file: File) => {
-  const bytes = await file.arrayBuffer()
-  const inferredType = file.type || inferMimeTypeFromName(file.name) || 'application/octet-stream'
-  return new File([bytes], file.name || 'scan-image', {
-    type: inferredType,
-    lastModified: Date.now()
-  })
-}
-
 const clearExtractionFile = () => {
   extractionFile.value = null
+  extractionCompressionNote.value = null
 }
 
 const extractAndPrefill = async () => {
@@ -1076,12 +1084,23 @@ const extractAndPrefill = async () => {
     return
   }
 
-  if (file.size <= 0) {
+  const uploadFile = await compressImageForUpload(file, {
+    compressIfLargerThan: COMPRESS_IF_LARGER_THAN,
+    maxDimension: UPLOAD_MAX_DIMENSION,
+    jpegQuality: UPLOAD_JPEG_QUALITY
+  })
+
+  if (uploadFile !== file) {
+    extractionCompressionNote.value = `Image optimised for upload (${formatFileSize(file.size)} -> ${formatFileSize(uploadFile.size)}).`
+    extractionFile.value = uploadFile
+  }
+
+  if (uploadFile.size <= 0) {
     extractionError.value = 'This image appears empty. Please re-select the photo and try again.'
     return
   }
 
-  if (file.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
+  if (uploadFile.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
     extractionError.value = 'Image is too large for AI scan (max 8MB). Please crop/resize and try again.'
     return
   }
@@ -1089,8 +1108,7 @@ const extractAndPrefill = async () => {
   extractingRecipe.value = true
 
   try {
-    const stableFile = await materializeExtractionFile(file)
-    const effectiveType = (stableFile.type || inferMimeTypeFromName(stableFile.name) || '').toLowerCase()
+    const effectiveType = (uploadFile.type || inferMimeTypeFromName(uploadFile.name) || '').toLowerCase()
 
     if (!isSupportedExtractionImage(effectiveType)) {
       extractionError.value = 'Unsupported image format. Please upload JPG, PNG, WEBP, or GIF.'
@@ -1098,7 +1116,7 @@ const extractAndPrefill = async () => {
     }
 
     const requestBody = new FormData()
-    requestBody.append('image', stableFile)
+    requestBody.append('image', uploadFile)
 
     const extracted = await $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
       method: 'POST',
@@ -1112,6 +1130,7 @@ const extractAndPrefill = async () => {
     const extractedStepCount = Array.isArray(extracted.steps) ? extracted.steps.length : 0
     extractionSummary.value = `Prefill complete: ${extractedIngredientCount} ingredients and ${extractedStepCount} steps extracted.`
     extractionFile.value = null
+    extractionCompressionNote.value = null
   } catch (error: any) {
     const detailMessage = typeof error?.data?.detail === 'string' ? error.data.detail : ''
     const rawMessage = detailMessage || error?.data?.statusMessage || error?.statusMessage || error?.message || ''
@@ -1142,6 +1161,32 @@ watch(extractionPreviewFile, (nextFile) => {
   }
 })
 
+watch(extractionFile, async (files) => {
+  if (!files || isProcessingExtractionSelection.value) {
+    return
+  }
+
+  const file = getFirstFile(files)
+  if (!(file instanceof File) || isHeicLike(file)) {
+    return
+  }
+
+  isProcessingExtractionSelection.value = true
+  try {
+    const compressed = await compressImageForUpload(file, {
+      compressIfLargerThan: COMPRESS_IF_LARGER_THAN,
+      maxDimension: UPLOAD_MAX_DIMENSION,
+      jpegQuality: UPLOAD_JPEG_QUALITY
+    })
+    if (compressed !== file) {
+      extractionCompressionNote.value = `Image optimised for upload (${formatFileSize(file.size)} -> ${formatFileSize(compressed.size)}).`
+      extractionFile.value = compressed
+    }
+  } finally {
+    isProcessingExtractionSelection.value = false
+  }
+})
+
 onBeforeUnmount(() => {
   if (extractionPreviewUrl.value) {
     URL.revokeObjectURL(extractionPreviewUrl.value)
@@ -1165,8 +1210,19 @@ watch(selectedFile, async (files) => {
   uploadingFile.value = true
 
   try {
+    const uploadFile = await compressImageForUpload(file, {
+      compressIfLargerThan: COMPRESS_IF_LARGER_THAN,
+      maxDimension: UPLOAD_MAX_DIMENSION,
+      jpegQuality: UPLOAD_JPEG_QUALITY
+    })
+    if (uploadFile !== file) {
+      uploadCompressionNote.value = `Image optimised for upload (${formatFileSize(file.size)} -> ${formatFileSize(uploadFile.size)}).`
+    } else {
+      uploadCompressionNote.value = null
+    }
+
     const formData = new FormData()
-    formData.append('image', file)
+    formData.append('image', uploadFile)
 
     const result = await $fetch<{ url: string; path: string }>('/api/recipes/upload', {
       method: 'POST',
@@ -1187,6 +1243,7 @@ const clearImage = () => {
   state.imageUrl = null
   selectedFile.value = null
   uploadError.value = null
+  uploadCompressionNote.value = null
 }
 
 const onSubmit = async (event: any) => {
