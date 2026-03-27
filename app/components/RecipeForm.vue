@@ -51,10 +51,10 @@
           </div>
         </UFormField>
 
-        <UFormField label="Optional method image (for two-column pages)">
+        <UFormField label="Optional method image">
           <ImageSourcePicker
             v-model="extractionMethodFile"
-            description="Optional: add a second photo focused on method/instructions to improve extraction quality."
+            description="If you use a single full-page scan (not three-region), add a second photo of the method column to improve steps."
           />
           <p v-if="extractionMethodCompressionNote" class="mt-2 text-xs text-muted">
             {{ extractionMethodCompressionNote }}
@@ -73,6 +73,37 @@
             ]"
           />
         </UFormField>
+
+        <div
+          v-if="extractionPreviewUrl"
+          class="space-y-2 rounded-lg border border-dashed border-default p-3 md:col-span-2"
+        >
+          <p class="text-sm text-muted">
+            Dense or two-column pages: crop this image into three regions (title, ingredients, method) so the AI reads each part clearly. This runs three focused scans instead of one full page.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              type="button"
+              variant="outline"
+              size="sm"
+              @click="regionCropModalOpen = true"
+            >
+              Crop title, ingredients &amp; method
+            </UButton>
+            <UButton
+              v-if="triRegionCrops"
+              type="button"
+              variant="ghost"
+              size="sm"
+              @click="clearTriRegionCrops"
+            >
+              Clear region crops
+            </UButton>
+          </div>
+          <p v-if="triRegionCrops" class="text-xs text-primary">
+            Three region crops are ready — Scan and prefill will use them instead of the full page image.
+          </p>
+        </div>
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -115,6 +146,33 @@
         <UIcon name="i-heroicons-arrow-path" class="animate-spin" />
         <span>Matching extracted ingredients to your ingredient library...</span>
       </div>
+
+      <Teleport to="body">
+        <div
+          v-if="regionCropModalOpen && extractionPreviewUrl"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          @click.self="regionCropModalOpen = false"
+        >
+          <div class="bg-default max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-default p-4 shadow-xl">
+            <div class="mb-3 flex items-center justify-between gap-2">
+              <h4 class="text-sm font-semibold">
+                Define three regions
+              </h4>
+              <UButton
+                icon="i-heroicons-x-mark"
+                variant="ghost"
+                size="xs"
+                @click="regionCropModalOpen = false"
+              />
+            </div>
+            <RecipePageRegionCropper
+              :image-src="extractionPreviewUrl"
+              @complete="onRegionCropsComplete"
+              @cancel="regionCropModalOpen = false"
+            />
+          </div>
+        </div>
+      </Teleport>
     </div>
 
     <div class="rounded-xl border border-default p-5 space-y-5">
@@ -144,8 +202,13 @@
           />
         </UFormField>
 
-        <UFormField label="Source URL" name="source" class="md:col-span-2">
-          <UInput v-model="state.source" type="url" placeholder="https://example.com/original-recipe" />
+        <UFormField
+          label="Source"
+          name="source"
+          class="md:col-span-2"
+          help="Cookbook title and page, blog name, or a web address — whatever you use to remember where this came from."
+        >
+          <UInput v-model="state.source" placeholder="e.g. Ottolenghi Simple p. 142, or https://…" />
         </UFormField>
 
         <UFormField label="Description" name="description" class="md:col-span-2">
@@ -497,7 +560,7 @@ const schema = z.object({
   imageUrl: z.string().nullable().optional(),
   date: z.string().min(1, 'Date is required'),
   tags: z.array(z.string()).default([]),
-  source: z.string().url().optional().or(z.literal('')),
+  source: z.string().max(500),
   visibility: z.enum(['public', 'private']).default('public'),
   ingredients: z.array(z.object({
     amount: z.union([z.string(), z.number()]).transform(val => String(val)),
@@ -653,6 +716,8 @@ const hydratingPrefilledIngredients = ref(false)
 const extractionPreviewUrl = ref<string | null>(null)
 const extractionCompressionNote = ref<string | null>(null)
 const extractionMethodCompressionNote = ref<string | null>(null)
+const triRegionCrops = ref<{ title: Blob; ingredients: Blob; method: Blob } | null>(null)
+const regionCropModalOpen = ref(false)
 const uploadCompressionNote = ref<string | null>(null)
 const isProcessingExtractionSelection = ref(false)
 const submitting = computed(() => Boolean(props.submitting))
@@ -901,11 +966,9 @@ const mergeExtractedRecipe = (extracted: ExtractedRecipeResponse, mode: Extracti
   if (mode === 'replace-all') {
     if (extracted.title) state.title = extracted.title.trim()
     if (extracted.description !== undefined) state.description = String(extracted.description || '').trim()
-    if (extracted.source !== undefined) state.source = String(extracted.source || '').trim()
   } else {
     if (!state.title.trim() && extracted.title) state.title = extracted.title.trim()
     if (!state.description.trim() && extracted.description) state.description = extracted.description.trim()
-    if (!state.source.trim() && extracted.source) state.source = extracted.source.trim()
   }
 
   if (Array.isArray(extracted.tags) && extracted.tags.length > 0) {
@@ -1076,11 +1139,33 @@ const isSupportedExtractionImage = (mimeType: string) => {
   return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mimeType)
 }
 
+const clearTriRegionCrops = () => {
+  triRegionCrops.value = null
+}
+
+const onRegionCropsComplete = (payload: { title: Blob; ingredients: Blob; method: Blob }) => {
+  triRegionCrops.value = payload
+  regionCropModalOpen.value = false
+}
+
 const clearExtractionFile = () => {
   extractionFile.value = null
   extractionMethodFile.value = null
   extractionCompressionNote.value = null
   extractionMethodCompressionNote.value = null
+  triRegionCrops.value = null
+  regionCropModalOpen.value = false
+}
+
+const runExtractionTriRegion = async (regions: { title: Blob; ingredients: Blob; method: Blob }) => {
+  const fd = new FormData()
+  fd.append('imageTitle', new File([regions.title], 'title.jpg', { type: 'image/jpeg' }))
+  fd.append('imageIngredients', new File([regions.ingredients], 'ingredients.jpg', { type: 'image/jpeg' }))
+  fd.append('imageMethod', new File([regions.method], 'method.jpg', { type: 'image/jpeg' }))
+  return $fetch<ExtractedRecipeResponse>('/api/recipes/extract', {
+    method: 'POST',
+    body: fd
+  })
 }
 
 const runExtractionForFile = async (uploadFile: File) => {
@@ -1114,6 +1199,16 @@ const extractAndPrefill = async () => {
     return
   }
 
+  const regions = triRegionCrops.value
+  if (regions) {
+    for (const blob of [regions.title, regions.ingredients, regions.method]) {
+      if (blob.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
+        extractionError.value = 'One cropped region is too large (max 8MB per image). Tighten the crop and try again.'
+        return
+      }
+    }
+  }
+
   const uploadFile = await compressImageForUpload(file, {
     compressIfLargerThan: COMPRESS_IF_LARGER_THAN,
     maxDimension: UPLOAD_MAX_DIMENSION,
@@ -1130,7 +1225,7 @@ const extractAndPrefill = async () => {
     return
   }
 
-  if (uploadFile.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
+  if (!regions && uploadFile.size > MAX_EXTRACTION_FILE_SIZE_BYTES) {
     extractionError.value = 'Image is too large for AI scan (max 8MB). Please crop/resize and try again.'
     return
   }
@@ -1138,6 +1233,21 @@ const extractAndPrefill = async () => {
   extractingRecipe.value = true
 
   try {
+    if (regions) {
+      const extracted = await runExtractionTriRegion(regions)
+      mergeExtractedRecipe(extracted, extractionApplyMode.value)
+      void hydrateExtractedIngredients()
+      const ingCount = Array.isArray(extracted.ingredients) ? extracted.ingredients.length : 0
+      const stepCount = Array.isArray(extracted.steps) ? extracted.steps.length : 0
+      extractionSummary.value = `Prefill complete (three-region scan): ${ingCount} ingredients and ${stepCount} steps extracted.`
+      triRegionCrops.value = null
+      extractionFile.value = null
+      extractionMethodFile.value = null
+      extractionCompressionNote.value = null
+      extractionMethodCompressionNote.value = null
+      return
+    }
+
     const extracted = await runExtractionForFile(uploadFile)
     mergeExtractedRecipe(extracted, extractionApplyMode.value)
 
@@ -1194,6 +1304,7 @@ const extractAndPrefill = async () => {
 }
 
 watch(extractionPreviewFile, (nextFile) => {
+  triRegionCrops.value = null
   if (extractionPreviewUrl.value) {
     URL.revokeObjectURL(extractionPreviewUrl.value)
     extractionPreviewUrl.value = null

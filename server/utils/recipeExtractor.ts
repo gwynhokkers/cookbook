@@ -251,10 +251,9 @@ const RECIPE_RESPONSE_SCHEMA = {
       type: 'array',
       maxItems: 30,
       items: { type: 'string', maxLength: 80 }
-    },
-    source: { type: 'string', maxLength: 500 }
+    }
   },
-  required: ['title', 'description', 'ingredients', 'steps', 'tags', 'source']
+  required: ['title', 'description', 'ingredients', 'steps', 'tags']
 }
 
 const parseAiRecipeJson = (response: any): ExtractedRecipe => {
@@ -381,10 +380,40 @@ const TRANSCRIPTION_SCHEMA = {
     servings: { type: 'number' },
     ingredientsText: { type: 'string', maxLength: 12000 },
     methodText: { type: 'string', maxLength: 18000 },
-    tags: { type: 'array', maxItems: 30, items: { type: 'string', maxLength: 80 } },
-    source: { type: 'string', maxLength: 500 }
+    tags: { type: 'array', maxItems: 30, items: { type: 'string', maxLength: 80 } }
   },
-  required: ['title', 'description', 'ingredientsText', 'methodText', 'tags', 'source']
+  required: ['title', 'description', 'ingredientsText', 'methodText', 'tags']
+}
+
+/** Narrow vision schemas for tri-region extraction (one image per region). */
+const REGION_TITLE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', maxLength: 240 },
+    description: { type: 'string', maxLength: 5000 },
+    servings: { type: 'number' },
+    tags: { type: 'array', maxItems: 30, items: { type: 'string', maxLength: 80 } }
+  },
+  required: ['title', 'description', 'tags']
+}
+
+const REGION_INGREDIENTS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ingredientsText: { type: 'string', maxLength: 12000 }
+  },
+  required: ['ingredientsText']
+}
+
+const REGION_METHOD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    methodText: { type: 'string', maxLength: 18000 }
+  },
+  required: ['methodText']
 }
 
 const splitLines = (text: string) => text
@@ -560,8 +589,7 @@ const structureFromTranscript = (transcript: TranscribedRecipeText): ExtractedRe
     servings: transcript.servings,
     ingredients,
     steps,
-    tags: Array.isArray(transcript.tags) ? transcript.tags : [],
-    source: String(transcript.source || '').trim()
+    tags: Array.isArray(transcript.tags) ? transcript.tags : []
   }
 }
 
@@ -584,6 +612,124 @@ const runVisionPrompt = async (ai: any, visionModel: string, prompt: string, ima
   })
 }
 
+/**
+ * Extract from three pre-cropped images (title block, ingredients list, method).
+ * Three focused vision calls; merged via the same transcript pipeline as full-page extraction.
+ */
+export async function extractRecipeFromRegionImages(
+  titleBase64: string,
+  ingredientsBase64: string,
+  methodBase64: string,
+  event?: any,
+  titleMime?: string,
+  ingredientsMime?: string,
+  methodMime?: string
+): Promise<ExtractedRecipe> {
+  const ai = await getAIClient(event)
+  const visionModel = '@cf/meta/llama-3.2-11b-vision-instruct'
+  const titleMimeNorm = normalizeImageMimeType(titleMime)
+  const ingredientsMimeNorm = normalizeImageMimeType(ingredientsMime)
+  const methodMimeNorm = normalizeImageMimeType(methodMime)
+  const titleUrl = `data:${titleMimeNorm};base64,${titleBase64}`
+  const ingredientsUrl = `data:${ingredientsMimeNorm};base64,${ingredientsBase64}`
+  const methodUrl = `data:${methodMimeNorm};base64,${methodBase64}`
+
+  const titlePrompt = `You are an OCR assistant. This image is a crop of the top of a cookbook recipe page (title and any introduction).
+Return JSON only with:
+- title: recipe name as plain text (no markdown)
+- description: short intro or empty string if none
+- tags: array of short tags if visible, otherwise []
+- servings: number only if clearly printed (omit if unknown)`
+
+  const ingredientsPrompt = `You are an OCR assistant. This image shows only the INGREDIENTS list.
+Return JSON only with ingredientsText: newline-separated lines, one ingredient per line, as printed.`
+
+  const methodPrompt = `You are an OCR assistant. This image shows only the METHOD / cooking instructions.
+Return JSON only with methodText: full instructions, newline-separated. Preserve 1. 2. step numbering if present.`
+
+  try {
+    try {
+      await ai.run(visionModel, {
+        messages: [{ role: 'user', content: 'agree' }]
+      })
+    } catch {
+      // ignore
+    }
+
+    const [titleResponse, ingredientsResponse, methodResponse] = await Promise.all([
+      runVisionPrompt(ai, visionModel, titlePrompt, titleUrl, { type: 'json_schema', json_schema: REGION_TITLE_SCHEMA }, 2000),
+      runVisionPrompt(ai, visionModel, ingredientsPrompt, ingredientsUrl, { type: 'json_schema', json_schema: REGION_INGREDIENTS_SCHEMA }, 2400),
+      runVisionPrompt(ai, visionModel, methodPrompt, methodUrl, { type: 'json_schema', json_schema: REGION_METHOD_SCHEMA }, 2600)
+    ])
+
+    const titleData = parseAiRecipeJson(titleResponse) as Record<string, unknown>
+    const ingredientsData = parseAiRecipeJson(ingredientsResponse) as Record<string, unknown>
+    const methodData = parseAiRecipeJson(methodResponse) as Record<string, unknown>
+
+    let transcript: TranscribedRecipeText = {
+      title: typeof titleData.title === 'string' ? titleData.title : '',
+      description: typeof titleData.description === 'string' ? titleData.description : '',
+      servings: typeof titleData.servings === 'number' ? titleData.servings : undefined,
+      ingredientsText: typeof ingredientsData.ingredientsText === 'string' ? ingredientsData.ingredientsText : '',
+      methodText: typeof methodData.methodText === 'string' ? methodData.methodText : '',
+      tags: Array.isArray(titleData.tags) ? titleData.tags.filter((t): t is string => typeof t === 'string') : []
+    }
+
+    let structured = structureFromTranscript(transcript)
+    let normalized = normalizeExtractedRecipe(structured)
+
+    console.info('[extractRecipeFromRegionImages] summary', {
+      ingredientLines: splitLines(String(transcript.ingredientsText || '')).length,
+      methodBlocks: parseMethodTextToSteps(String(transcript.methodText || '')).length,
+      ingredientCount: normalized.ingredients.length,
+      stepCount: normalized.steps.length
+    })
+
+    if ((normalized.steps || []).filter(isMeaningfulStep).length === 0) {
+      const methodRetry = await runVisionPrompt(
+        ai,
+        visionModel,
+        `${methodPrompt}\nIf nothing is readable, return methodText as an empty string.`,
+        methodUrl,
+        { type: 'json_schema', json_schema: REGION_METHOD_SCHEMA },
+        2600
+      )
+      const retryData = parseAiRecipeJson(methodRetry) as Record<string, unknown>
+      if (typeof retryData.methodText === 'string' && retryData.methodText.trim()) {
+        transcript = { ...transcript, methodText: retryData.methodText }
+        structured = structureFromTranscript(transcript)
+        normalized = normalizeExtractedRecipe(structured)
+      }
+    }
+
+    if (!hasMeaningfulExtraction(normalized)) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: 'No extractable recipe content found in this image.',
+        data: {
+          detail: 'AI could not confidently read one or more regions. Try tighter crops with even lighting.'
+        }
+      })
+    }
+
+    return normalized
+  } catch (error: any) {
+    if (error?.statusCode === 422 || error?.statusCode === 429 || error?.statusCode === 402) {
+      throw error
+    }
+    const originalErrorDetail = normalizeErrorDetail(
+      error?.data?.detail || error?.statusMessage || error?.message,
+      'Unknown error',
+      4000
+    )
+    throw createError({
+      statusCode: Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500,
+      statusMessage: 'Failed to extract recipe',
+      data: { detail: originalErrorDetail }
+    })
+  }
+}
+
 export async function extractRecipeFromImage(imageBase64: string, event?: any, imageMimeType?: string): Promise<ExtractedRecipe> {
   const ai = await getAIClient(event)
   const normalizedMimeType = normalizeImageMimeType(imageMimeType)
@@ -599,17 +745,18 @@ Read the image and extract:
 - methodText: ALL text from the METHOD / instructions section only — not the ingredients list. On two-column pages, read the method column (often right-hand). Number each step as 1. 2. 3. if the book does, otherwise one paragraph per line; separate steps with newlines
 - servings when visible
 - tags as array if visible, otherwise []
-- source text if visible (book/section/page)
 Do not convert ingredients into structured fields yet; copy lines faithfully.`
 
   const ingredientsOnlyPrompt = `Extract only ingredient lines from this image.
-Return JSON with keys: ingredientsText, title, source.
+Return JSON with keys: ingredientsText, title.
 - ingredientsText must be newline-separated ingredient lines exactly as printed.
+- title: short recipe title if visible at the top, else empty string.
 - If nothing is readable, return ingredientsText as empty string.`
 
   const stepsOnlyPrompt = `Extract only cooking method / instructions from this image (ignore ingredients lists).
-Return JSON with keys: methodText, title, source.
+Return JSON with keys: methodText, title.
 - methodText: every numbered or paragraph step, newline-separated. Preserve 1. 2. 3. prefixes if present.
+- title: short recipe title if visible, else empty string.
 - On two-column layouts, transcribe the method column in full.
 - If nothing is readable, return methodText as empty string.`
 
@@ -658,10 +805,9 @@ Return JSON with keys: methodText, title, source.
               additionalProperties: false,
               properties: {
                 title: { type: 'string', maxLength: 240 },
-                methodText: { type: 'string', maxLength: 18000 },
-                source: { type: 'string', maxLength: 500 }
+                methodText: { type: 'string', maxLength: 18000 }
               },
-              required: ['methodText', 'title', 'source']
+              required: ['methodText', 'title']
             }
           },
           1800
@@ -672,7 +818,6 @@ Return JSON with keys: methodText, title, source.
           structured = {
             ...structured,
             title: structured.title || String(sData.title || '').replace(/\*\*/g, '').trim(),
-            source: structured.source || sData.source,
             steps: mergedSteps
           }
           normalized = normalizeExtractedRecipe(structured)
@@ -693,10 +838,9 @@ Return JSON with keys: methodText, title, source.
             additionalProperties: false,
             properties: {
               title: { type: 'string', maxLength: 240 },
-              ingredientsText: { type: 'string', maxLength: 12000 },
-              source: { type: 'string', maxLength: 500 }
+              ingredientsText: { type: 'string', maxLength: 12000 }
             },
-            required: ['ingredientsText', 'title', 'source']
+            required: ['ingredientsText', 'title']
           }
         },
         1800
@@ -705,7 +849,6 @@ Return JSON with keys: methodText, title, source.
       structured = {
         ...structured,
         title: structured.title || iData.title,
-        source: structured.source || iData.source,
         ingredients: splitLines(String(iData.ingredientsText || '')).map(parseIngredientLine)
       }
       normalized = normalizeExtractedRecipe(structured)
@@ -724,10 +867,9 @@ Return JSON with keys: methodText, title, source.
             additionalProperties: false,
             properties: {
               title: { type: 'string', maxLength: 240 },
-              methodText: { type: 'string', maxLength: 18000 },
-              source: { type: 'string', maxLength: 500 }
+              methodText: { type: 'string', maxLength: 18000 }
             },
-            required: ['methodText', 'title', 'source']
+            required: ['methodText', 'title']
           }
         },
         1800
@@ -736,7 +878,6 @@ Return JSON with keys: methodText, title, source.
       structured = {
         ...structured,
         title: structured.title || sData.title,
-        source: structured.source || sData.source,
         steps: parseMethodTextToSteps(String(sData.methodText || ''))
       }
       normalized = normalizeExtractedRecipe(structured)
@@ -747,7 +888,7 @@ Return JSON with keys: methodText, title, source.
       const fallbackStructuredResponse = await runVisionPrompt(
         ai,
         visionModel,
-        `Extract recipe fields from this image. Return JSON object with keys title, description, ingredients, steps, tags, source, servings.`,
+        `Extract recipe fields from this image. Return JSON object with keys title, description, ingredients, steps, tags, servings.`,
         imageDataUrl,
         { type: 'json_object' },
         2200
@@ -1117,7 +1258,6 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     ingredients: [],
     steps: [],
     tags: Array.isArray(data.tags) ? data.tags.filter((t: any) => typeof t === 'string') : [],
-    source: typeof data.source === 'string' ? data.source.trim() : undefined,
     imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl.trim() : undefined
   }
 
