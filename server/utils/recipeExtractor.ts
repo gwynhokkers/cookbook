@@ -41,6 +41,9 @@ const normalizeErrorDetail = (value: unknown, fallback = 'Unknown error', maxLen
   return compact.slice(0, maxLength)
 }
 
+/** Coerce vision/JSON output to a trimmed string (avoids `x.trim is not a function` when the model returns a number or other non-string). */
+const safeTrim = (value: unknown): string => String(value ?? '').trim()
+
 /**
  * Extract recipe information from an image using AI vision model
  */
@@ -315,8 +318,8 @@ const parseAiRecipeJson = (response: any): ExtractedRecipe => {
 }
 
 const getIngredientAnomalyStats = (ingredients: ExtractedRecipe['ingredients']) => {
-  const isBadName = (name: string) => {
-    const n = name.trim().toLowerCase()
+  const isBadName = (name: unknown) => {
+    const n = safeTrim(name).toLowerCase()
     if (!n) return true
     if (!/[a-z]/i.test(n)) return true
     if (/^\(?see\s+pages?\s+\d+/i.test(n)) return true
@@ -347,7 +350,7 @@ const getExtractionQualityScore = (recipe: ExtractedRecipe) => {
   const ingredientStats = getIngredientAnomalyStats(recipe.ingredients)
   const validIngredients = Math.max(ingredientStats.total - ingredientStats.bad, 0)
   const meaningfulSteps = (recipe.steps || []).filter(isMeaningfulStep).length
-  const titleBonus = recipe.title?.trim() ? 1 : 0
+  const titleBonus = safeTrim(recipe.title) ? 1 : 0
   return {
     validIngredients,
     meaningfulSteps,
@@ -357,7 +360,8 @@ const getExtractionQualityScore = (recipe: ExtractedRecipe) => {
 
 const hasMeaningfulExtraction = (recipe: ExtractedRecipe) => {
   const quality = getExtractionQualityScore(recipe)
-  const hasIntroOnlyContent = Boolean(recipe.title?.trim()) && Boolean(recipe.description?.trim()) && (recipe.description?.trim().length || 0) >= 80
+  const desc = safeTrim(recipe.description)
+  const hasIntroOnlyContent = Boolean(safeTrim(recipe.title)) && desc.length >= 80
   return quality.validIngredients > 0 || quality.meaningfulSteps > 0 || hasIntroOnlyContent
 }
 
@@ -1109,25 +1113,34 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     cloves: 'pieces'
   }
   const prepWords = ['chopped', 'diced', 'sliced', 'minced', 'fresh', 'dried', 'roughly', 'finely', 'grated', 'crushed', 'optional']
-  const appendNote = (a?: string, b?: string) => [a, b].filter(Boolean).join(', ').replace(/\s+/g, ' ').trim()
-  const canonicalizeUnit = (value: string) => unitMap[value.trim().toLowerCase()] || value.trim().toLowerCase()
+  const appendNote = (a?: unknown, b?: unknown) =>
+    [a, b].filter((x) => x !== undefined && x !== null && String(x).trim() !== '')
+      .map((x) => String(x).trim())
+      .join(', ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const canonicalizeUnit = (value: unknown) => {
+    const v = safeTrim(value).toLowerCase()
+    return unitMap[v] || v
+  }
   const hasLetters = (value: string) => /[a-z]/i.test(value)
-  const isBadIngredientName = (value: string) => {
-    const name = value.trim()
+  const isBadIngredientName = (value: unknown) => {
+    const name = safeTrim(value)
     if (!name || !hasLetters(name)) return true
     if (/^\(?see\s+pages?\s+\d+/i.test(name)) return true
     if (/^\(?page\s+\d+/i.test(name)) return true
     if (/^[().,\-/\d\s]+$/.test(name)) return true
     return false
   }
-  const moveReferenceTokensToNotes = (name: string, notes?: string) => {
-    const referenceMatch = name.match(/\((?:see\s+)?pages?\s+\d+(?:[-–]\d+)?\)/i) || name.match(/\((?:see\s+)?page\s+\d+\)/i)
-    if (!referenceMatch) return { name, notes }
-    const cleanedName = name.replace(referenceMatch[0], '').replace(/\s+/g, ' ').trim().replace(/,$/, '')
+  const moveReferenceTokensToNotes = (name: unknown, notes?: unknown) => {
+    const nameStr = safeTrim(name)
+    const referenceMatch = nameStr.match(/\((?:see\s+)?pages?\s+\d+(?:[-–]\d+)?\)/i) || nameStr.match(/\((?:see\s+)?page\s+\d+\)/i)
+    if (!referenceMatch) return { name: nameStr, notes: notes === undefined || notes === null ? undefined : safeTrim(notes) }
+    const cleanedName = nameStr.replace(referenceMatch[0], '').replace(/\s+/g, ' ').trim().replace(/,$/, '')
     return { name: cleanedName, notes: appendNote(notes, referenceMatch[0]) }
   }
-  const movePrepTokensToNotes = (name: string, notes?: string) => {
-    let cleaned = name
+  const movePrepTokensToNotes = (name: unknown, notes?: unknown) => {
+    let cleaned = safeTrim(name)
     const found: string[] = []
     for (const prep of prepWords) {
       const re = new RegExp(`\\b${prep}\\b`, 'gi')
@@ -1137,13 +1150,16 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
       }
     }
     cleaned = cleaned.replace(/\s+/g, ' ').trim().replace(/^[,.\-]+|[,.\-]+$/g, '')
-    return { name: cleaned, notes: found.length ? appendNote(notes, found.join(' ')) : notes }
+    return {
+      name: cleaned,
+      notes: found.length ? appendNote(notes, found.join(' ')) : (notes === undefined || notes === null ? undefined : safeTrim(notes))
+    }
   }
-  const normaliseAmountAndUnit = (rawAmount: string, rawUnit: string, rawName: string, rawNotes?: string) => {
-    let amount = rawAmount.trim()
+  const normaliseAmountAndUnit = (rawAmount: unknown, rawUnit: unknown, rawName: unknown, rawNotes?: unknown) => {
+    let amount = safeTrim(rawAmount)
     let unit = canonicalizeUnit(rawUnit || '')
-    let ingredientName = rawName.trim()
-    let notes = rawNotes?.trim()
+    let ingredientName = safeTrim(rawName)
+    let notes = rawNotes === undefined || rawNotes === null ? undefined : safeTrim(rawNotes)
 
     const splitAmount = amount.match(/^([\d./\s-]+)\s*(g|kg|oz|lb|ml|l|cups?|tbsp|tsp|teaspoons?|tablespoons?)\b(?:\s*\/\s*([^,]+))?/i)
     if (splitAmount) {
@@ -1166,8 +1182,9 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
       notes = appendNote(notes, parts.slice(1).join('/').trim())
     }
 
-    if (/cloves?/i.test(rawUnit) && (isBadIngredientName(ingredientName) || prepWords.includes(ingredientName.toLowerCase()))) {
-      const maybeName = rawUnit.replace(/cloves?/ig, '').trim()
+    const rawUnitStr = String(rawUnit ?? '')
+    if (/cloves?/i.test(rawUnitStr) && (isBadIngredientName(ingredientName) || prepWords.includes(ingredientName.toLowerCase()))) {
+      const maybeName = rawUnitStr.replace(/cloves?/ig, '').trim()
       if (maybeName) {
         notes = appendNote(notes, ingredientName)
         ingredientName = maybeName
@@ -1182,10 +1199,10 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     return { amount, unit, ingredientName, notes }
   }
   const repairIngredientFields = (ing: any) => {
-    let amount = String(ing.amount || ing.quantity || '').trim()
-    let unit = String(ing.unit || '').trim()
-    let ingredientName = String(ing.ingredientName || ing.name || ing.ingredient || '').trim()
-    let notes = typeof ing.notes === 'string' ? ing.notes.trim() : undefined
+    let amount = String(ing.amount ?? ing.quantity ?? '').trim()
+    let unit = String(ing.unit ?? '').trim()
+    let ingredientName = String(ing.ingredientName ?? ing.name ?? ing.ingredient ?? '').trim()
+    let notes = ing.notes === undefined || ing.notes === null ? undefined : safeTrim(ing.notes)
 
     const normalized = normaliseAmountAndUnit(amount, unit, ingredientName, notes)
     amount = normalized.amount
@@ -1252,8 +1269,8 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
   }
 
   const normalized: ExtractedRecipe = {
-    title: typeof data.title === 'string' ? data.title.trim() : undefined,
-    description: typeof data.description === 'string' ? data.description.trim() : undefined,
+    title: (typeof data.title === 'string' || typeof data.title === 'number') ? safeTrim(data.title) || undefined : undefined,
+    description: (typeof data.description === 'string' || typeof data.description === 'number') ? safeTrim(data.description) || undefined : undefined,
     servings,
     ingredients: [],
     steps: [],
