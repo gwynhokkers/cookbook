@@ -1,6 +1,7 @@
 import { db, schema } from '../../db'
 import { nanoid } from 'nanoid'
 import { createRecipe } from '~~/shared/utils/abilities'
+import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
 
 export default defineEventHandler(async (event) => {
   await authorize(event, createRecipe)
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
 
   const newRecipe = {
     id: recipeId,
-    title,
+    title: toRecipeTitleCase(String(title).trim()),
     description: description || null,
     imageUrl: imageUrl || null,
     date: date ? new Date(date) : now,

@@ -95,6 +95,17 @@ export default defineNuxtConfig({
         target: 'esnext'
       }
     }
+  },
+
+  vite: {
+    optimizeDeps: {
+      include: [
+        '@vue/devtools-core',
+        '@vue/devtools-kit',
+        'zod',
+        'cropperjs',
+      ]
+    }
   }
 
 })

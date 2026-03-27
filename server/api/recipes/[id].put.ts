@@ -1,6 +1,7 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
 import { editRecipe } from '~~/shared/utils/abilities'
+import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
 
 export default defineEventHandler(async (event) => {
   await authorize(event, editRecipe)
@@ -37,7 +38,7 @@ export default defineEventHandler(async (event) => {
     updateData.authorId = (session.user as Record<string, unknown>).id
   }
 
-  if (title !== undefined) updateData.title = title
+  if (title !== undefined) updateData.title = toRecipeTitleCase(String(title).trim())
   if (description !== undefined) updateData.description = description
   if (imageUrl !== undefined) updateData.imageUrl = imageUrl
   if (date !== undefined) updateData.date = new Date(date)

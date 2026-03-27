@@ -3,6 +3,8 @@
  * Extracts recipe information from images
  */
 
+import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
+
 export interface ExtractedRecipe {
   title?: string
   description?: string
@@ -44,6 +46,406 @@ const normalizeErrorDetail = (value: unknown, fallback = 'Unknown error', maxLen
 /** Coerce vision/JSON output to a trimmed string (avoids `x.trim is not a function` when the model returns a number or other non-string). */
 const safeTrim = (value: unknown): string => String(value ?? '').trim()
 
+/** Workers AI / gateway may return structured JSON in `result.response` (object) when using json_schema; normalise to a string for parsing. */
+const coerceAiResponseToText = (value: unknown): string => {
+  if (typeof value === 'string') return value
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+const hasRecipeJsonShape = (o: Record<string, unknown>): boolean =>
+  'ingredientsText' in o
+  || 'methodText' in o
+  || 'ingredients' in o
+  || 'steps' in o
+  || 'title' in o
+  || 'description' in o
+  || 'tags' in o
+
+/**
+ * After JSON.parse, unwrap Cloudflare Workers AI envelopes so recipe fields sit at top level.
+ * JSON schema output is often `{ response: { ingredientsText, ... } }` (see Workers AI JSON mode docs);
+ * we previously only unwrapped `result`, so region extraction saw empty strings.
+ */
+function unwrapAiJsonPayloadWithBranch(parsed: unknown): { value: unknown; branch: string } {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { value: parsed, branch: 'non-object' }
+  }
+  const o = parsed as Record<string, unknown>
+  if (hasRecipeJsonShape(o)) return { value: o, branch: 'direct' }
+
+  const resp = o.response
+  if (resp != null && typeof resp === 'object' && !Array.isArray(resp)) {
+    const r = resp as Record<string, unknown>
+    if (hasRecipeJsonShape(r)) return { value: r, branch: 'response' }
+  }
+
+  const res = o.result
+  if (res != null && typeof res === 'object' && !Array.isArray(res)) {
+    const r = res as Record<string, unknown>
+    if (hasRecipeJsonShape(r)) return { value: r, branch: 'result' }
+    const nested = r.response
+    if (nested != null && typeof nested === 'object' && !Array.isArray(nested)) {
+      const deep = nested as Record<string, unknown>
+      if (hasRecipeJsonShape(deep)) return { value: deep, branch: 'result.response' }
+    }
+  }
+  return { value: parsed, branch: 'none' }
+}
+
+const unwrapAiJsonPayload = (parsed: unknown): unknown => unwrapAiJsonPayloadWithBranch(parsed).value
+
+/**
+ * First balanced `{ ... }` from the first `{`, respecting JSON string rules so `{`/`}` inside
+ * ingredients/method text does not truncate the payload (naive brace counting breaks OCR JSON).
+ */
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (c === '\\' && inString) {
+      escape = true
+      continue
+    }
+    if (c === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+    if (c === '{') depth++
+    if (c === '}') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+function parseJsonSegmentLenient(segment: string): unknown {
+  const s = segment.trim()
+  try {
+    return JSON.parse(s)
+  } catch {
+    const extracted = extractFirstJsonObject(s)
+    if (extracted) {
+      return JSON.parse(extracted)
+    }
+    throw new Error('parse failed')
+  }
+}
+
+const pickStringField = (o: Record<string, unknown>, ...keys: string[]): string => {
+  for (const k of keys) {
+    const v = o[k]
+    if (typeof v === 'string') return v
+  }
+  return ''
+}
+
+/** Workers AI sometimes returns one line per array element instead of a single newline-separated string. */
+const coerceMultilineSchemaField = (v: unknown): string => {
+  if (typeof v === 'string') return v
+  if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean).join('\n')
+  return ''
+}
+
+/** When the model ignores JSON schema and returns markdown, extract title from common patterns. */
+const extractTitleFromMarkdownProse = (text: string): string => {
+  const t = text.trim()
+  if (!t) return ''
+  const bold = t.match(/\*\*Title\*\*\s*:\s*([^\n*]+)/i)
+  if (bold?.[1]) return bold[1].trim()
+  const bullet = t.match(/(?:^|\n)\s*\*?\s*\*?\*?Title\*?\*?\s*:\s*([^\n]+)/im)
+  if (bullet?.[1]) return bullet[1].replace(/^\*+|\*+$/g, '').trim()
+  return ''
+}
+
+/** Model sometimes uses section headings as title (e.g. "Recipe Information"); prefer real title from markdown. */
+const sanitizeRegionTitle = (title: string, titleResponse: unknown): string => {
+  let t = title.trim()
+  if (!/^(recipe information|ingredients?|method|instructions?)$/i.test(t)) {
+    return t
+  }
+  if (titleResponse && typeof titleResponse === 'object') {
+    const tr = titleResponse as Record<string, unknown>
+    if (typeof tr.response === 'string') {
+      const fromMd = extractTitleFromMarkdownProse(tr.response)
+      if (fromMd.trim()) return fromMd.trim()
+    }
+  }
+  return ''
+}
+
+const looksLikeMethodJsonEnvelope = (t: string): boolean => {
+  const x = t.trim()
+  return x.startsWith('{') && /"methodText"\s*:/.test(x)
+}
+
+/**
+ * When JSON.parse fails on the blob (invalid escapes, unescaped newlines, etc.), read the
+ * `methodText` string value with a scanner so we never split `{ "methodText": "…" }` across steps.
+ */
+const extractMethodTextFromSloppyEnvelope = (t: string): string | null => {
+  const s = t.trim()
+  if (!s.startsWith('{')) return null
+  const keyIdx = s.indexOf('"methodText"')
+  if (keyIdx < 0) return null
+  const afterKey = s.slice(keyIdx + '"methodText"'.length)
+  const m = afterKey.match(/^\s*:\s*"/)
+  if (!m) return null
+  let i = keyIdx + '"methodText"'.length + m[0].length
+  let out = ''
+  let escape = false
+  for (; i < s.length; i++) {
+    const c = s[i]
+    if (escape) {
+      if (c === 'n') out += '\n'
+      else if (c === 'r') out += '\r'
+      else if (c === 't') out += '\t'
+      else if (c === '\\') out += '\\'
+      else if (c === '"') out += '"'
+      else out += c
+      escape = false
+      continue
+    }
+    if (c === '\\') {
+      escape = true
+      continue
+    }
+    if (c === '"') {
+      const tail = s.slice(i + 1).trim()
+      if (tail === '}' || tail.startsWith('}')) return out.trim()
+      return out.trim()
+    }
+    out += c
+  }
+  const trimmed = out.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * Strip conversational preambles and duplicate JSON blobs from method region output so step parsing
+ * does not turn "Sure, here is…" or nested `{"methodText":…}` into fake steps.
+ */
+const sanitizeTriRegionMethodText = (raw: string): string => {
+  let s = raw.trim()
+  if (!s) return ''
+
+  /** Try every `{…}` slice in order — the first balanced object may not contain `methodText`. */
+  const methodTextFromJsonBlob = (text: string): string | null => {
+    let pos = 0
+    while (pos < text.length) {
+      const i = text.indexOf('{', pos)
+      if (i < 0) break
+      const slice = extractFirstJsonObject(text.slice(i))
+      if (slice) {
+        try {
+          const p = JSON.parse(slice) as Record<string, unknown>
+          const m = p.methodText
+          if (typeof m === 'string' && m.trim()) return m.trim()
+        } catch {
+          /* try next { */
+        }
+      }
+      pos = i + 1
+    }
+    return null
+  }
+
+  let out = methodTextFromJsonBlob(s)
+  if (out) {
+    return out
+  }
+
+  if (looksLikeMethodJsonEnvelope(s)) {
+    const sloppy = extractMethodTextFromSloppyEnvelope(s)
+    if (sloppy) {
+      return sloppy
+    }
+  }
+
+  const lines = s.split(/\r?\n/)
+  let drop = 0
+  while (drop < lines.length) {
+    const L = (lines[drop] ?? '').trim()
+    if (!L) {
+      drop++
+      continue
+    }
+    if (/^\d+\.\s/.test(L)) break
+    if (/^\s*\{[\s\S]*"methodText"\s*:/.test(L) || (L.startsWith('{') && L.includes('methodText'))) break
+    if (/^(sure|ok|okay|here|below|the image|the recipe|following|this is|i will|i'll|notes?|json)/i.test(L)) {
+      drop++
+      continue
+    }
+    if (/^(sure|okay|ok)[,.]?\s*(here|below|is|folks)/i.test(L)) {
+      drop++
+      continue
+    }
+    if (L.length < 200 && /json\s+format|step\s+numbering|as\s+requested|assistant|method\s+text\s+in/i.test(L)) {
+      drop++
+      continue
+    }
+    if (L.length < 90 && /^(please|below is|here is)/i.test(L)) {
+      drop++
+      continue
+    }
+    break
+  }
+  s = lines.slice(drop).join('\n').trim()
+  out = methodTextFromJsonBlob(s)
+  if (out) {
+    return out
+  }
+
+  const numIdx = s.search(/\n\s*\d+\.\s/)
+  if (numIdx > 0 && numIdx < 400) {
+    s = s.slice(numIdx).trim()
+    out = methodTextFromJsonBlob(s)
+    if (out) return out
+  }
+
+  if (looksLikeMethodJsonEnvelope(s)) {
+    const sloppy = extractMethodTextFromSloppyEnvelope(s)
+    if (sloppy) {
+      return sloppy
+    }
+  }
+
+  return s.trim()
+}
+
+/** Region extraction expects `ingredientsText`; `parseTextResponse` fallback uses structured `ingredients`. */
+const ingredientsTextFromRegionParsed = (data: Record<string, unknown>): string => {
+  const direct = coerceMultilineSchemaField(data.ingredientsText ?? data.ingredients_text)
+  if (direct.trim()) return direct
+  const ing = data.ingredients
+  if (Array.isArray(ing)) {
+    return ing
+      .map((item) => {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          const x = item as Record<string, unknown>
+          const parts = [x.amount, x.unit, x.ingredientName, x.notes].filter(
+            (p): p is string => typeof p === 'string' && p.trim().length > 0
+          )
+          if (parts.length) return parts.join(' ')
+        }
+        return String(item ?? '')
+      })
+      .filter((line) => line.trim().length > 0)
+      .join('\n')
+  }
+  return ''
+}
+
+const methodTextFromStepsArray = (steps: unknown): string => {
+  if (!Array.isArray(steps)) return ''
+  for (const s of steps) {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) continue
+    const x = s as Record<string, unknown>
+    for (const field of [x.content, x.title]) {
+      if (typeof field !== 'string' || !field.trim()) continue
+      const blob = extractFirstJsonObject(field)
+      if (!blob) continue
+      try {
+        const inner = JSON.parse(blob) as Record<string, unknown>
+        const m = inner.methodText
+        if (typeof m === 'string' && m.trim()) return m.trim()
+      } catch {
+        /* continue */
+      }
+    }
+  }
+  return ''
+}
+
+const isGarbageMethodStepLine = (title: string, content: string): boolean => {
+  const t = title.trim()
+  const c = content.trim()
+  const combined = `${t}\n${c}`
+  if (/^\s*\{/.test(t) || /"methodText"\s*:/.test(t)) return false
+  if (/^(sure|okay|ok)[,.]?\s+(here|below)/i.test(combined) && combined.length < 220) return true
+  if (/json\s+format|step\s+numbering/i.test(combined) && combined.length < 220) return true
+  return false
+}
+
+const methodTextFromRegionParsed = (data: Record<string, unknown>): string => {
+  const direct = coerceMultilineSchemaField(data.methodText ?? data.method_text)
+  if (direct.trim()) return direct
+  const fromBlobSteps = methodTextFromStepsArray(data.steps)
+  if (fromBlobSteps.trim()) return fromBlobSteps
+  const steps = data.steps
+  if (Array.isArray(steps)) {
+    return steps
+      .map((s) => {
+        if (s && typeof s === 'object' && !Array.isArray(s)) {
+          const x = s as Record<string, unknown>
+          const content = typeof x.content === 'string' ? x.content : ''
+          const title = typeof x.title === 'string' ? x.title : ''
+          if (isGarbageMethodStepLine(title, content)) return ''
+          if (!content.trim()) return ''
+          return title && !/^step\s*\d+/i.test(title) ? `${title}: ${content}` : content
+        }
+        return String(s ?? '')
+      })
+      .filter((line) => line.trim().length > 0)
+      .join('\n')
+  }
+  return ''
+}
+
+/** When parseAiRecipeJson missed embedded JSON or the model returned prose only, recover from raw `ai.run` envelope. */
+function resolveRegionTitleFromParsed(titleData: Record<string, unknown>, titleResponse: unknown): string {
+  const fromParsed = pickStringField(titleData, 'title', 'recipe_title', 'name')
+  if (fromParsed.trim()) return fromParsed
+  if (titleResponse && typeof titleResponse === 'object') {
+    const tr = titleResponse as Record<string, unknown>
+    if (typeof tr.response === 'string') {
+      const fromMd = extractTitleFromMarkdownProse(tr.response)
+      if (fromMd) return fromMd
+    }
+  }
+  return fromParsed
+}
+
+function resolveRegionMethodText(methodData: Record<string, unknown>, methodResponse: unknown): string {
+  let text = methodTextFromRegionParsed(methodData)
+  if (text.trim()) return sanitizeTriRegionMethodText(text)
+  if (methodResponse && typeof methodResponse === 'object') {
+    const mr = methodResponse as Record<string, unknown>
+    if (typeof mr.response === 'string') {
+      const s = mr.response.trim()
+      const extracted = extractFirstJsonObject(s)
+      if (extracted) {
+        try {
+          const inner = JSON.parse(extracted) as Record<string, unknown>
+          text = coerceMultilineSchemaField(inner.methodText)
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!text.trim()) {
+        const numIdx = s.search(/\n\s*\d+\.\s/)
+        if (numIdx >= 0) {
+          text = s.slice(numIdx).trim()
+        } else if (s.length > 80) {
+          text = s
+        }
+      }
+    }
+  }
+  return sanitizeTriRegionMethodText(text)
+}
+
 /**
  * Extract recipe information from an image using AI vision model
  */
@@ -71,12 +473,15 @@ async function getAIClient(event?: any): Promise<any> {
   const gatewayAuthToken = process.env.NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN
   
   if (accountId && apiToken) {
-    if (!gatewayId) {
+    if (!gatewayId?.trim()) {
       throw createError({
         statusCode: 500,
         statusMessage: 'AI Gateway ID not configured. For local development, you need to set up an AI Gateway in Cloudflare dashboard and add NUXT_HUB_CLOUDFLARE_GATEWAY_ID to your .env file. See SETUP_CLOUDFLARE_AI.md for instructions.'
       })
     }
+
+    // Cloudflare docs: {gateway_id} in the URL is the AI Gateway *name* (dashboard name when you created it), not a UUID.
+    const gatewayIdForUrl = gatewayId.trim()
     
     // Create a proxy object that mimics the AI binding API
     // This allows us to use the same code path for both local and production
@@ -84,33 +489,49 @@ async function getAIClient(event?: any): Promise<any> {
       run: async (model: string, options: any) => {
         // Cloudflare AI Gateway endpoint for Workers AI
         // Format: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/workers-ai/{model_id}
-        const url = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/${model}`
-        
+        // {gateway_id} is the gateway name (same string as in the AI Gateway list / create flow), not a separate UUID field.
+        // Model IDs may contain slashes (e.g. @cf/meta/...); Cloudflare docs show them unencoded in the path.
+        const url = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayIdForUrl}/workers-ai/${model}`
+
         // Prepare request - Cloudflare API expects JSON
         const requestBody = JSON.stringify(options)
         
         // Prepare headers - check if gateway requires additional auth
         // If Authenticated Gateway is enabled, we need cf-aig-authorization header
         // See: https://developers.cloudflare.com/ai-gateway/configuration/authentication/
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json'
+        const buildHeaders = (includeCfAig: boolean): Record<string, string> => {
+          const h: Record<string, string> = {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+          }
+          if (includeCfAig && gatewayAuthToken) {
+            h['cf-aig-authorization'] = `Bearer ${gatewayAuthToken}`
+          }
+          return h
         }
-        
-        // Add gateway auth token if provided (required when Authenticated Gateway is enabled)
-        if (gatewayAuthToken) {
-          headers['cf-aig-authorization'] = `Bearer ${gatewayAuthToken}`
+
+        const gatewayFetchAttempt = async (headers: Record<string, string>) => {
+          const res = await fetch(url, { method: 'POST', headers, body: requestBody })
+          const bodyText = await res.text()
+          return { res, bodyText }
         }
-        
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: requestBody
-        })
-        
+
+        let result = await gatewayFetchAttempt(buildHeaders(true))
+        if (!result.res.ok && result.res.status === 401 && gatewayAuthToken) {
+          result = await gatewayFetchAttempt(buildHeaders(false))
+        }
+        if (!result.res.ok && result.res.status === 401 && gatewayAuthToken) {
+          result = await gatewayFetchAttempt({
+            'Authorization': `Bearer ${gatewayAuthToken}`,
+            'Content-Type': 'application/json'
+          })
+        }
+
+        const response = result.res
+
         if (!response.ok) {
-          const errorText = await response.text()
-          
+          const errorText = result.bodyText
+
           let errorData: any
           try {
             errorData = JSON.parse(errorText)
@@ -136,15 +557,24 @@ async function getAIClient(event?: any): Promise<any> {
           if (response.status === 400 && errorData.error?.[0]?.code === 2001) {
             throw createError({
               statusCode: 400,
-              statusMessage: 'AI Gateway not properly configured. Please ensure: 1) You have created an AI Gateway in Cloudflare dashboard, 2) The gateway has "Workers AI" as a provider, 3) Your NUXT_HUB_CLOUDFLARE_GATEWAY_ID is correct (should be a UUID, not your Account ID). See SETUP_CLOUDFLARE_AI.md for detailed instructions.'
+              statusMessage: 'AI Gateway not properly configured. Please ensure: 1) You have created an AI Gateway in Cloudflare dashboard, 2) The gateway has "Workers AI" as a provider, 3) NUXT_HUB_CLOUDFLARE_GATEWAY_ID matches the gateway name (not your Account ID). See SETUP_CLOUDFLARE_AI.md for detailed instructions.'
             })
           }
           
-          if (response.status === 401 && (errorData.errors?.[0]?.code === 10000 || errorData.error?.[0]?.code === 10000)) {
+          const gatewayErr = errorData.errors?.[0] || errorData.error?.[0]
+          const gatewayErrCode = gatewayErr?.code
+          if (response.status === 401 && (gatewayErrCode === 10000 || gatewayErrCode === 2009)) {
+            const cfMsg = gatewayErr?.message || ''
             const hasGatewayAuth = !!gatewayAuthToken
+            const detail = [
+              cfMsg && `Cloudflare (${gatewayErrCode}): ${cfMsg}`,
+              gatewayErrCode === 2009 && 'Code 2009 usually means the Cloudflare API token was rejected for this route. Create a token with Workers AI: Read and AI Gateway: Read, account scope, IP = all addresses.',
+              hasGatewayAuth && 'If Authenticated Gateway is off, try removing NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN (invalid cf-aig). The app also retries with the gateway token as Bearer if set.',
+              'If Authenticated Gateway is on, use the gateway token from the AI Gateway dashboard for NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN.'
+            ].filter(Boolean).join(' ')
             throw createError({
               statusCode: 401,
-              statusMessage: `Authentication failed. ${hasGatewayAuth ? 'Gateway auth token provided but still failing.' : 'If your gateway has "Authenticated Gateway" enabled, you need to set NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN in .env. '}Common causes: 1) Authenticated Gateway enabled but missing cf-aig-authorization header, 2) API token has IP filtering - use "All IP addresses" or add your public IP (not private IP), 3) API token has incorrect permissions - ensure "Workers AI: Read" and "AI Gateway: Read" are set, 4) Token is not scoped to the correct account, 5) Token may be expired or revoked. See SETUP_CLOUDFLARE_AI.md for troubleshooting.`
+              statusMessage: `Authentication failed. ${detail}`
             })
           }
           const dynamicErrorMessage = errorData.message || errorData.error?.[0]?.message || errorData.errors?.[0]?.message || errorText
@@ -159,7 +589,7 @@ async function getAIClient(event?: any): Promise<any> {
           })
         }
         
-        const data = await response.json()
+        const data = JSON.parse(result.bodyText)
         
         // Cloudflare API returns { result: { response: "..." } } or similar structure
         // Return the result in a format compatible with the binding API
@@ -260,15 +690,48 @@ const RECIPE_RESPONSE_SCHEMA = {
 }
 
 const parseAiRecipeJson = (response: any): ExtractedRecipe => {
+  // Workers AI often returns { response: string | object, tool_calls, usage }. When `response` is a JSON
+  // string, coerce→stringify→parse can fail (logs: no json match / regex path threw). Handle object/string first.
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const r = response as Record<string, unknown>
+    const inner = r.response
+    if (inner != null && typeof inner === 'object' && !Array.isArray(inner)) {
+      const ir = inner as Record<string, unknown>
+      if (hasRecipeJsonShape(ir)) {
+        const { value } = unwrapAiJsonPayloadWithBranch(inner)
+        return value as ExtractedRecipe
+      }
+    }
+    if (typeof inner === 'string') {
+      const s = inner.trim()
+      if (s.length > 0 && (s.startsWith('{') || s.startsWith('['))) {
+        try {
+          const parsed = parseJsonSegmentLenient(s)
+          const { value } = unwrapAiJsonPayloadWithBranch(parsed)
+          return value as ExtractedRecipe
+        } catch {
+          // fall through to legacy coercion + parse
+        }
+      }
+    }
+  }
+
   let responseText: string
   if (typeof response === 'string') {
     responseText = response
-  } else if (response?.result?.response) {
-    responseText = response.result.response
-  } else if (response?.response) {
-    responseText = response.response
-  } else if (response?.text) {
-    responseText = response.text
+  } else if (response?.result?.response != null) {
+    responseText = coerceAiResponseToText(response.result.response)
+  } else if (
+    response?.result != null
+    && typeof response.result === 'object'
+    && !Array.isArray(response.result)
+  ) {
+    // Cloudflare may return { result: { title, ... } } with no `response` envelope (JSON schema output).
+    responseText = JSON.stringify(response.result)
+  } else if (response?.response != null) {
+    responseText = coerceAiResponseToText(response.response)
+  } else if (response?.text != null) {
+    responseText = coerceAiResponseToText(response.text)
   } else {
     responseText = JSON.stringify(response)
   }
@@ -285,31 +748,35 @@ const parseAiRecipeJson = (response: any): ExtractedRecipe => {
     jsonText = jsonText.substring(jsonStartIndex)
   }
 
-  let braceCount = 0
-  let jsonEndIndex = -1
-  for (let i = 0; i < jsonText.length; i++) {
-    if (jsonText[i] === '{') braceCount++
-    if (jsonText[i] === '}') {
-      braceCount--
-      if (braceCount === 0) {
-        jsonEndIndex = i + 1
-        break
-      }
-    }
-  }
-
-  if (jsonEndIndex > 0 && jsonEndIndex < jsonText.length) {
-    jsonText = jsonText.substring(0, jsonEndIndex)
+  const finishUnwrap = (parsed: unknown): ExtractedRecipe => {
+    const { value } = unwrapAiJsonPayloadWithBranch(parsed)
+    return value as ExtractedRecipe
   }
 
   try {
-    return JSON.parse(jsonText)
+    return finishUnwrap(parseJsonSegmentLenient(jsonText))
   } catch {
+    const extracted = extractFirstJsonObject(responseText)
+    if (extracted) {
+      try {
+        return finishUnwrap(parseJsonSegmentLenient(extracted))
+      } catch {
+        // fall through
+      }
+    }
     const jsonMatch = responseText.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
       try {
-        return JSON.parse(jsonMatch[0])
+        return finishUnwrap(parseJsonSegmentLenient(jsonMatch[0]))
       } catch {
+        const balanced = extractFirstJsonObject(responseText)
+        if (balanced) {
+          try {
+            return finishUnwrap(parseJsonSegmentLenient(balanced))
+          } catch {
+            return parseTextResponse(responseText)
+          }
+        }
         return parseTextResponse(responseText)
       }
     }
@@ -583,7 +1050,8 @@ const parseMethodTextToSteps = (methodText: string) => {
 const structureFromTranscript = (transcript: TranscribedRecipeText): ExtractedRecipe => {
   const ingredientLines = splitLines(String(transcript.ingredientsText || ''))
   const ingredients = ingredientLines.map(parseIngredientLine).filter((ing) => ing.ingredientName)
-  const steps = parseMethodTextToSteps(String(transcript.methodText || ''))
+  const methodPlain = sanitizeTriRegionMethodText(String(transcript.methodText || ''))
+  const steps = parseMethodTextToSteps(methodPlain)
   const title = String(transcript.title || '')
     .replace(/\*\*/g, '')
     .trim()
@@ -638,18 +1106,29 @@ export async function extractRecipeFromRegionImages(
   const ingredientsUrl = `data:${ingredientsMimeNorm};base64,${ingredientsBase64}`
   const methodUrl = `data:${methodMimeNorm};base64,${methodBase64}`
 
-  const titlePrompt = `You are an OCR assistant. This image is a crop of the top of a cookbook recipe page (title and any introduction).
-Return JSON only with:
-- title: recipe name as plain text (no markdown)
-- description: short intro or empty string if none
-- tags: array of short tags if visible, otherwise []
-- servings: number only if clearly printed (omit if unknown)`
+  const titlePrompt = `OCR task: read the recipe title and any short introduction visible in this crop.
 
-  const ingredientsPrompt = `You are an OCR assistant. This image shows only the INGREDIENTS list.
-Return JSON only with ingredientsText: newline-separated lines, one ingredient per line, as printed.`
+Output requirements (strict):
+- Respond with ONLY a single JSON object matching the schema. No markdown, no bullet lists, no headings, no text before or after the JSON.
+- title: the recipe name exactly as printed (plain text). Never use generic section labels such as "Recipe Information", "Ingredients", or "Method" as the title unless those words are literally the recipe name on the page.
+- description: the introductory paragraph if present, otherwise "".
+- tags: short strings or [].
+- Do not wrap values in ** or *.`
 
-  const methodPrompt = `You are an OCR assistant. This image shows only the METHOD / cooking instructions.
-Return JSON only with methodText: full instructions, newline-separated. Preserve 1. 2. step numbering if present.`
+  const ingredientsPrompt = `OCR task: read only the ingredient lines in this image.
+
+Output requirements (strict):
+- Respond with ONLY a single JSON object matching the schema. No commentary, no markdown, no text outside the JSON.
+- ingredientsText must be a single string. Put each ingredient on its own line using newline characters inside that string (not an array of strings).
+- Copy quantities and units as printed.`
+
+  const methodPrompt = `OCR task: read only the cooking method / instructions in this image.
+
+Output requirements (strict):
+- Your entire reply must be ONLY one JSON object that matches the schema — nothing else. No assistant message, no markdown, no code fences, no text before or after the object.
+- Do not write "Sure", "Here is", "Below is", "JSON format", or any similar phrase anywhere.
+- methodText must be plain prose only: the recipe instructions as printed. Newlines between steps. Keep 1. 2. 3. prefixes if the book uses them.
+- methodText must NOT contain another JSON object, escaped JSON, or the words schema or methodText inside the string — only the actual cooking steps.`
 
   try {
     try {
@@ -670,37 +1149,41 @@ Return JSON only with methodText: full instructions, newline-separated. Preserve
     const ingredientsData = parseAiRecipeJson(ingredientsResponse) as Record<string, unknown>
     const methodData = parseAiRecipeJson(methodResponse) as Record<string, unknown>
 
+    const resolvedTitle = resolveRegionTitleFromParsed(titleData, titleResponse)
+    let titleForTranscript = sanitizeRegionTitle(resolvedTitle, titleResponse)
+    if (
+      !titleForTranscript.trim()
+      && resolvedTitle.trim()
+      && !/^(recipe information|ingredients?|method|instructions?)$/i.test(resolvedTitle.trim())
+    ) {
+      titleForTranscript = resolvedTitle.trim()
+    }
+
     let transcript: TranscribedRecipeText = {
-      title: typeof titleData.title === 'string' ? titleData.title : '',
-      description: typeof titleData.description === 'string' ? titleData.description : '',
+      title: titleForTranscript,
+      description: pickStringField(titleData, 'description', 'intro', 'introduction'),
       servings: typeof titleData.servings === 'number' ? titleData.servings : undefined,
-      ingredientsText: typeof ingredientsData.ingredientsText === 'string' ? ingredientsData.ingredientsText : '',
-      methodText: typeof methodData.methodText === 'string' ? methodData.methodText : '',
+      ingredientsText: ingredientsTextFromRegionParsed(ingredientsData),
+      methodText: resolveRegionMethodText(methodData, methodResponse),
       tags: Array.isArray(titleData.tags) ? titleData.tags.filter((t): t is string => typeof t === 'string') : []
     }
 
     let structured = structureFromTranscript(transcript)
     let normalized = normalizeExtractedRecipe(structured)
 
-    console.info('[extractRecipeFromRegionImages] summary', {
-      ingredientLines: splitLines(String(transcript.ingredientsText || '')).length,
-      methodBlocks: parseMethodTextToSteps(String(transcript.methodText || '')).length,
-      ingredientCount: normalized.ingredients.length,
-      stepCount: normalized.steps.length
-    })
-
     if ((normalized.steps || []).filter(isMeaningfulStep).length === 0) {
       const methodRetry = await runVisionPrompt(
         ai,
         visionModel,
-        `${methodPrompt}\nIf nothing is readable, return methodText as an empty string.`,
+        `${methodPrompt}\nIf nothing is readable, return exactly {"methodText":""} with no other keys or text.`,
         methodUrl,
         { type: 'json_schema', json_schema: REGION_METHOD_SCHEMA },
         2600
       )
       const retryData = parseAiRecipeJson(methodRetry) as Record<string, unknown>
-      if (typeof retryData.methodText === 'string' && retryData.methodText.trim()) {
-        transcript = { ...transcript, methodText: retryData.methodText }
+      const retryMethod = resolveRegionMethodText(retryData, methodRetry)
+      if (retryMethod.trim()) {
+        transcript = { ...transcript, methodText: retryMethod }
         structured = structureFromTranscript(transcript)
         normalized = normalizeExtractedRecipe(structured)
       }
@@ -741,12 +1224,12 @@ export async function extractRecipeFromImage(imageBase64: string, event?: any, i
   const visionModel = '@cf/meta/llama-3.2-11b-vision-instruct'
 
   const transcriptionPrompt = `You are an OCR recipe transcription assistant for cookbook pages.
-Return JSON only.
+Return ONLY one JSON object matching the schema — no markdown, no commentary, no text outside the JSON.
 Read the image and extract:
 - title (plain text, no markdown asterisks)
 - short description/introduction text if present
 - ingredientsText: one ingredient per line, including quantities and units as printed (e.g. 250 g green beans, not only "g green beans" if the number is visible)
-- methodText: ALL text from the METHOD / instructions section only — not the ingredients list. On two-column pages, read the method column (often right-hand). Number each step as 1. 2. 3. if the book does, otherwise one paragraph per line; separate steps with newlines
+- methodText: ALL text from the METHOD / instructions section only — not the ingredients list. Plain prose with newlines between steps; no nested JSON, no "Sure/Here is", no schema repetition. On two-column pages, read the method column (often right-hand). Number each step as 1. 2. 3. if the book does, otherwise one paragraph per line; separate steps with newlines
 - servings when visible
 - tags as array if visible, otherwise []
 Do not convert ingredients into structured fields yet; copy lines faithfully.`
@@ -758,11 +1241,11 @@ Return JSON with keys: ingredientsText, title.
 - If nothing is readable, return ingredientsText as empty string.`
 
   const stepsOnlyPrompt = `Extract only cooking method / instructions from this image (ignore ingredients lists).
-Return JSON with keys: methodText, title.
-- methodText: every numbered or paragraph step, newline-separated. Preserve 1. 2. 3. prefixes if present.
+Return ONLY one JSON object with keys methodText and title — no preamble, no markdown, no assistant wording.
+- methodText: plain prose only — every numbered or paragraph step, newline-separated. Preserve 1. 2. 3. prefixes if present. Do not put JSON, schema text, or phrases like "Sure" or "Here is" inside methodText.
 - title: short recipe title if visible, else empty string.
 - On two-column layouts, transcribe the method column in full.
-- If nothing is readable, return methodText as empty string.`
+- If nothing is readable, return exactly {"methodText":"","title":""}.`
 
   try {
     try {
@@ -783,15 +1266,9 @@ Return JSON with keys: methodText, title.
     )
 
     const transcribed = parseAiRecipeJson(transcriptionResponse) as TranscribedRecipeText
+    transcribed.methodText = sanitizeTriRegionMethodText(String(transcribed.methodText || ''))
     let structured = structureFromTranscript(transcribed)
     let normalized = normalizeExtractedRecipe(structured)
-
-    console.info('[extractRecipeFromImage] transcript-first summary', {
-      ingredientLines: splitLines(String(transcribed.ingredientsText || '')).length,
-      methodBlocks: parseMethodTextToSteps(String(transcribed.methodText || '')).length,
-      ingredientCount: normalized.ingredients.length,
-      stepCount: normalized.steps.length
-    })
 
     // Ingredients present but no method: common on two-column scans — run a focused steps pass.
     {
@@ -817,6 +1294,7 @@ Return JSON with keys: methodText, title.
           1800
         )
         const sData = parseAiRecipeJson(stepsRetry) as TranscribedRecipeText
+        sData.methodText = sanitizeTriRegionMethodText(String(sData.methodText || ''))
         const mergedSteps = parseMethodTextToSteps(String(sData.methodText || ''))
         if (mergedSteps.filter(isMeaningfulStep).length > 0) {
           structured = {
@@ -879,6 +1357,7 @@ Return JSON with keys: methodText, title.
         1800
       )
       const sData = parseAiRecipeJson(stepsRetry) as TranscribedRecipeText
+      sData.methodText = sanitizeTriRegionMethodText(String(sData.methodText || ''))
       structured = {
         ...structured,
         title: structured.title || sData.title,
@@ -892,7 +1371,7 @@ Return JSON with keys: methodText, title.
       const fallbackStructuredResponse = await runVisionPrompt(
         ai,
         visionModel,
-        `Extract recipe fields from this image. Return JSON object with keys title, description, ingredients, steps, tags, servings.`,
+        `Extract recipe fields from this image. Return ONLY a JSON object with keys title, description, ingredients, steps, tags, servings. No assistant preamble. For steps use plain instruction text in each step's content — not nested JSON or meta-commentary.`,
         imageDataUrl,
         { type: 'json_object' },
         2200
@@ -1226,11 +1705,20 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     return { amount, unit: canonicalizeUnit(unit) || 'pieces', ingredientName, notes }
   }
 
+  const isGarbageStepTitle = (t: string) => {
+    const s = t.trim()
+    if (!s) return false
+    if (/^\s*\{/.test(s)) return true
+    if (/["']methodText["']\s*:/.test(s)) return true
+    if (/^(sure|okay|ok)[,.]?\s+(here|below)/i.test(s)) return true
+    return false
+  }
+
   const deriveStepTitle = (rawTitle: unknown, rawContent: unknown, index: number): string => {
     const title = String(rawTitle || '').trim()
     const content = String(rawContent || '').trim()
     const isNumericTitle = /^(?:step\s*)?\d+[).:\-]*$/i.test(title)
-    if (title && !isNumericTitle) {
+    if (title && !isNumericTitle && !isGarbageStepTitle(title)) {
       return title
     }
 
@@ -1268,8 +1756,10 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     }
   }
 
+  const rawTitleForNorm =
+    typeof data.title === 'string' || typeof data.title === 'number' ? safeTrim(data.title) : ''
   const normalized: ExtractedRecipe = {
-    title: (typeof data.title === 'string' || typeof data.title === 'number') ? safeTrim(data.title) || undefined : undefined,
+    title: rawTitleForNorm ? toRecipeTitleCase(rawTitleForNorm) : undefined,
     description: (typeof data.description === 'string' || typeof data.description === 'number') ? safeTrim(data.description) || undefined : undefined,
     servings,
     ingredients: [],

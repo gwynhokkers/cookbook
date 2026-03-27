@@ -150,7 +150,9 @@ const handleSubmit = async (data: any) => {
       description: `"${recipe.title}" was added successfully.`
     })
 
-    await navigateTo(`/recipes/${recipe.id}`)
+    if (recipe?.id) {
+      return await navigateTo(`/recipes/${recipe.id}`, { replace: true })
+    }
   } catch (error: any) {
     console.error('Failed to create recipe:', error)
     toast.add({
