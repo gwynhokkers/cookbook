@@ -45,16 +45,26 @@ const evaluateFixture = (fixture) => {
 }
 
 const main = async () => {
+  const enforce = process.argv.includes('--enforce')
   const files = await readdir(fixturesDir)
   const jsonFiles = files.filter(file => file.endsWith('.json'))
+  // Negative fixtures (bad model output) are kept for documentation; exclude from --enforce thresholds.
+  const filesToEvaluate = enforce
+    ? jsonFiles.filter(file => !file.includes('inconsistent'))
+    : jsonFiles
 
   if (jsonFiles.length === 0) {
     console.log('No fixtures found in scripts/extraction-fixtures')
     process.exit(0)
   }
 
+  if (enforce && filesToEvaluate.length === 0) {
+    console.error('No fixtures eligible for --enforce (add *-good.json or remove inconsistent-only set).')
+    process.exit(1)
+  }
+
   const results = []
-  for (const file of jsonFiles) {
+  for (const file of filesToEvaluate) {
     const fullPath = path.join(fixturesDir, file)
     const data = await readFile(fullPath, 'utf8')
     const fixture = JSON.parse(data)
@@ -84,6 +94,18 @@ const main = async () => {
   }
   console.log('\nSummary:')
   console.log(JSON.stringify(summary, null, 2))
+
+  if (enforce) {
+    const failed =
+      summary.parseSuccessRate < 1 ||
+      summary.avgValidIngredientNameRate < 0.95 ||
+      summary.avgReferenceInNameRate > 0.05
+
+    if (failed) {
+      console.error('\nExtraction quality thresholds not met.')
+      process.exit(1)
+    }
+  }
 }
 
 main().catch((error) => {

@@ -6,6 +6,7 @@
     "build": "nuxt build",
     "patch-wrangler": "node scripts/patch-wrangler-d1-migrations.mjs",
     "evaluate:extraction": "node scripts/evaluate-recipe-extraction-fixtures.mjs",
+    "evaluate:extraction:enforce": "node scripts/evaluate-recipe-extraction-fixtures.mjs --enforce",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

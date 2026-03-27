@@ -1142,6 +1142,8 @@ const extractAndPrefill = async () => {
       extractionError.value = 'AI scanning is temporarily rate-limited. Please wait a moment and try again.'
     } else if (rawMessage.includes('quota exceeded')) {
       extractionError.value = 'AI scanning quota is exhausted. Please check your Cloudflare plan and limits.'
+    } else if (rawMessage.includes('No extractable recipe content found')) {
+      extractionError.value = 'We could not confidently read this recipe page. Try a brighter photo, crop closer, and make sure both ingredients and steps are visible.'
     } else {
       extractionError.value = rawMessage || 'Unable to extract recipe from image.'
     }

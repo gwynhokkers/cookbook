@@ -339,6 +339,28 @@ const shouldRunCorrectionPass = (recipe: ExtractedRecipe) => {
   return stats.ratio >= 0.25
 }
 
+const isMeaningfulStep = (step: { title: string; content: string }) => {
+  const content = String(step.content || '').trim()
+  return content.length >= 12
+}
+
+const getExtractionQualityScore = (recipe: ExtractedRecipe) => {
+  const ingredientStats = getIngredientAnomalyStats(recipe.ingredients)
+  const validIngredients = Math.max(ingredientStats.total - ingredientStats.bad, 0)
+  const meaningfulSteps = (recipe.steps || []).filter(isMeaningfulStep).length
+  const titleBonus = recipe.title?.trim() ? 1 : 0
+  return {
+    validIngredients,
+    meaningfulSteps,
+    total: validIngredients * 3 + meaningfulSteps * 2 + titleBonus
+  }
+}
+
+const hasMeaningfulExtraction = (recipe: ExtractedRecipe) => {
+  const quality = getExtractionQualityScore(recipe)
+  return quality.validIngredients > 0 || quality.meaningfulSteps > 0
+}
+
 export async function extractRecipeFromImage(imageBase64: string, event?: any, imageMimeType?: string): Promise<ExtractedRecipe> {
   // Get AI client (binding when event provided in production, else gateway/token for local)
   const ai = await getAIClient(event)
@@ -447,7 +469,16 @@ GENERAL RULES:
     }
 
     const extractedData = parseAiRecipeJson(response)
-    let normalized = normalizeExtractedRecipe(extractedData)
+    const firstPassNormalized = normalizeExtractedRecipe(extractedData)
+    let normalized = firstPassNormalized
+
+    const firstPassStats = getIngredientAnomalyStats(firstPassNormalized.ingredients)
+    console.info('[extractRecipeFromImage] first-pass summary', {
+      ingredientCount: firstPassNormalized.ingredients.length,
+      stepCount: firstPassNormalized.steps.length,
+      badIngredientCount: firstPassStats.bad,
+      badIngredientRatio: firstPassStats.ratio
+    })
 
     if (shouldRunCorrectionPass(normalized)) {
       try {
@@ -475,10 +506,30 @@ ${JSON.stringify(normalized)}`
         })
 
         const corrected = parseAiRecipeJson(correctionResponse)
-        normalized = normalizeExtractedRecipe(corrected)
+        const correctedNormalized = normalizeExtractedRecipe(corrected)
+        const baseScore = getExtractionQualityScore(firstPassNormalized)
+        const correctedScore = getExtractionQualityScore(correctedNormalized)
+
+        // Non-regression: only accept correction when it clearly improves output quality.
+        if (correctedScore.total > baseScore.total) {
+          normalized = correctedNormalized
+        } else {
+          normalized = firstPassNormalized
+        }
       } catch {
         // Keep first-pass normalized data if correction pass fails.
+        normalized = firstPassNormalized
       }
+    }
+
+    if (!hasMeaningfulExtraction(normalized)) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: 'No extractable recipe content found in this image.',
+        data: {
+          detail: 'AI could not confidently extract ingredients or steps. Try a brighter, closer crop with ingredients and method fully visible.'
+        }
+      })
     }
 
     return normalized
@@ -498,6 +549,15 @@ ${JSON.stringify(normalized)}`
       throw createError({
         statusCode: 402,
         statusMessage: 'AI quota exceeded. Please check your plan limits.'
+      })
+    }
+    if (error.statusCode === 422) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: error.statusMessage || 'No extractable recipe content found in this image.',
+        data: {
+          detail: error?.data?.detail || 'AI could not confidently extract ingredients or steps from this image.'
+        }
       })
     }
     const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600
