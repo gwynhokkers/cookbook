@@ -392,8 +392,101 @@ const splitLines = (text: string) => text
   .map(line => line.replace(/^[-*•\d.)\s]+/, '').trim())
   .filter(Boolean)
 
+const UNIT_ALIASES: Record<string, string> = {
+  g: 'grams',
+  gram: 'grams',
+  grams: 'grams',
+  kg: 'kg',
+  ml: 'ml',
+  l: 'l',
+  oz: 'oz',
+  lb: 'lb',
+  cup: 'cups',
+  cups: 'cups',
+  tbsp: 'tbsp',
+  tablespoon: 'tbsp',
+  tablespoons: 'tbsp',
+  tsp: 'tsp',
+  teaspoon: 'tsp',
+  teaspoons: 'tsp',
+  cloves: 'pieces',
+  clove: 'pieces',
+  pieces: 'pieces'
+}
+
+const canonicalUnitFromToken = (token: string) => {
+  const key = token.trim().toLowerCase()
+  return UNIT_ALIASES[key] || key
+}
+
+const splitNameAndCommaNotes = (rest: string) => {
+  const pageRef = /\((?:page\s*)?\d+\)|\((?:see\s+)?pages?\s+\d+(?:[-–]\d+)?\)/gi
+  const refs: string[] = []
+  let working = rest.replace(pageRef, (m) => {
+    refs.push(m.trim())
+    return ' '
+  })
+  working = working.replace(/\s+/g, ' ').trim()
+
+  const commaIdx = working.indexOf(',')
+  if (commaIdx < 0) {
+    return {
+      ingredientName: working,
+      notes: refs.join(', ')
+    }
+  }
+  const ingredientName = working.slice(0, commaIdx).trim()
+  const afterComma = working.slice(commaIdx + 1).trim()
+  const notes = [afterComma, ...refs].filter(Boolean).join(', ').trim()
+  return { ingredientName, notes }
+}
+
+/**
+ * Parse a single OCR ingredient line into amount/unit/name/notes.
+ * Handles cookbook layouts where the quantity is missing or merged with the unit (e.g. "g green beans").
+ */
 const parseIngredientLine = (line: string) => {
-  const cleaned = line.replace(/\s+/g, ' ').trim()
+  let cleaned = line.replace(/\s+/g, ' ').trim()
+  if (!cleaned) {
+    return { amount: '', unit: 'pieces', ingredientName: '', notes: '' }
+  }
+
+  // Section headings (not ingredients)
+  if (/^for\s+the\s+/i.test(cleaned) || /^method\b/i.test(cleaned)) {
+    return { amount: '', unit: 'pieces', ingredientName: cleaned, notes: '' }
+  }
+
+  // --- Pattern: number + unit + rest (250 g beans, 2 tablespoons oil, 5 cm cinnamon)
+  const numUnitRest = cleaned.match(
+    /^([\d¼½¾/.\s-]+)\s*(g|kg|ml|l|oz|lb|cm|cups?|tbsp|tsp|tablespoons?|teaspoons?|grams?|cloves?)\s+(.+)$/i
+  )
+  if (numUnitRest) {
+    const amount = numUnitRest[1].trim()
+    const unit = canonicalUnitFromToken(numUnitRest[2])
+    const { ingredientName, notes } = splitNameAndCommaNotes(numUnitRest[3].trim())
+    return { amount, unit, ingredientName, notes }
+  }
+
+  // --- Pattern: leading unit without number (OCR dropped quantity): "g green beans, trimmed", "cm piece of cinnamon"
+  const leadingUnit = cleaned.match(/^(g|kg|ml|l|oz|lb|cm)\s+(.+)$/i)
+  if (leadingUnit) {
+    const unit = canonicalUnitFromToken(leadingUnit[1])
+    const { ingredientName, notes } = splitNameAndCommaNotes(leadingUnit[2].trim())
+    return { amount: '', unit, ingredientName, notes }
+  }
+
+  // --- Pattern: leading count word (tablespoons/teaspoons) without or with number
+  const spoonWord = cleaned.match(
+    /^([\d¼½¾/.\s-]+)?\s*(tablespoons?|teaspoons?|tbsp|tsp)\s+(.+)$/i
+  )
+  if (spoonWord) {
+    const amount = (spoonWord[1] || '').trim()
+    const unit = canonicalUnitFromToken(spoonWord[2])
+    const { ingredientName, notes } = splitNameAndCommaNotes(spoonWord[3].trim())
+    return { amount, unit, ingredientName, notes }
+  }
+
+  // --- Fallback: legacy single-line regex (quantities stuck in amount field)
   const measurementMatch = cleaned.match(/^([\d¼½¾/.\s-]+)\s*(cups?|cup|tbsp|tsp|tablespoons?|teaspoons?|grams?|g|kg|oz|lb|ml|l|litres?|liters?|pieces?|cloves?)?\s*(.*)$/i)
   if (!measurementMatch) {
     return {
@@ -418,19 +511,37 @@ const parseIngredientLine = (line: string) => {
 
   return {
     amount,
-    unit: unitRaw || 'pieces',
+    unit: unitRaw ? canonicalUnitFromToken(unitRaw) : 'pieces',
     ingredientName,
     notes: [trailingNotes, reference].filter(Boolean).join(', ').trim()
   }
 }
 
 const parseMethodTextToSteps = (methodText: string) => {
-  const numbered = methodText.match(/(?:^|\n)\s*\d+[.)]\s+/)
-  const chunks = numbered
-    ? methodText.split(/\n\s*\d+[.)]\s+/).map(chunk => chunk.trim()).filter(Boolean)
-    : methodText.split(/\n\s*\n/).map(chunk => chunk.trim()).filter(Boolean)
+  const raw = String(methodText || '').trim()
+  if (!raw) {
+    return []
+  }
 
-  return chunks.map((content, index) => ({
+  // Split on numbered steps at line start or after newline
+  let chunks = raw
+    .split(/\n\s*(?=\d+[.)]\s+)/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  if (chunks.length <= 1) {
+    chunks = raw.split(/\s+(?=\d+[.)]\s+)/).map((s) => s.trim()).filter(Boolean)
+  }
+
+  if (chunks.length <= 1) {
+    chunks = raw.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)
+  }
+
+  const steps = chunks
+    .map((chunk) => chunk.replace(/^\d+[.)]\s*/, '').trim())
+    .filter((content) => content.length >= 8)
+
+  return steps.map((content, index) => ({
     title: `Step ${index + 1}`,
     content
   }))
@@ -438,10 +549,13 @@ const parseMethodTextToSteps = (methodText: string) => {
 
 const structureFromTranscript = (transcript: TranscribedRecipeText): ExtractedRecipe => {
   const ingredientLines = splitLines(String(transcript.ingredientsText || ''))
-  const ingredients = ingredientLines.map(parseIngredientLine)
+  const ingredients = ingredientLines.map(parseIngredientLine).filter((ing) => ing.ingredientName)
   const steps = parseMethodTextToSteps(String(transcript.methodText || ''))
+  const title = String(transcript.title || '')
+    .replace(/\*\*/g, '')
+    .trim()
   return {
-    title: String(transcript.title || '').trim(),
+    title,
     description: String(transcript.description || '').trim(),
     servings: transcript.servings,
     ingredients,
@@ -479,23 +593,24 @@ export async function extractRecipeFromImage(imageBase64: string, event?: any, i
   const transcriptionPrompt = `You are an OCR recipe transcription assistant for cookbook pages.
 Return JSON only.
 Read the image and extract:
-- title
+- title (plain text, no markdown asterisks)
 - short description/introduction text if present
-- ingredientsText as newline-separated ingredient lines exactly as printed
-- methodText as newline-separated instruction paragraphs exactly as printed
+- ingredientsText: one ingredient per line, including quantities and units as printed (e.g. 250 g green beans, not only "g green beans" if the number is visible)
+- methodText: ALL text from the METHOD / instructions section only — not the ingredients list. On two-column pages, read the method column (often right-hand). Number each step as 1. 2. 3. if the book does, otherwise one paragraph per line; separate steps with newlines
 - servings when visible
 - tags as array if visible, otherwise []
 - source text if visible (book/section/page)
-Do not convert ingredients into fields yet.`
+Do not convert ingredients into structured fields yet; copy lines faithfully.`
 
   const ingredientsOnlyPrompt = `Extract only ingredient lines from this image.
 Return JSON with keys: ingredientsText, title, source.
 - ingredientsText must be newline-separated ingredient lines exactly as printed.
 - If nothing is readable, return ingredientsText as empty string.`
 
-  const stepsOnlyPrompt = `Extract only cooking method steps from this image.
+  const stepsOnlyPrompt = `Extract only cooking method / instructions from this image (ignore ingredients lists).
 Return JSON with keys: methodText, title, source.
-- methodText must be newline-separated instruction paragraphs exactly as printed.
+- methodText: every numbered or paragraph step, newline-separated. Preserve 1. 2. 3. prefixes if present.
+- On two-column layouts, transcribe the method column in full.
 - If nothing is readable, return methodText as empty string.`
 
   try {
@@ -526,6 +641,44 @@ Return JSON with keys: methodText, title, source.
       ingredientCount: normalized.ingredients.length,
       stepCount: normalized.steps.length
     })
+
+    // Ingredients present but no method: common on two-column scans — run a focused steps pass.
+    {
+      const meaningfulStepCount = (normalized.steps || []).filter(isMeaningfulStep).length
+      if (normalized.ingredients.length > 0 && meaningfulStepCount === 0) {
+        const stepsRetry = await runVisionPrompt(
+          ai,
+          visionModel,
+          stepsOnlyPrompt,
+          imageDataUrl,
+          {
+            type: 'json_schema',
+            json_schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                title: { type: 'string', maxLength: 240 },
+                methodText: { type: 'string', maxLength: 18000 },
+                source: { type: 'string', maxLength: 500 }
+              },
+              required: ['methodText', 'title', 'source']
+            }
+          },
+          1800
+        )
+        const sData = parseAiRecipeJson(stepsRetry) as TranscribedRecipeText
+        const mergedSteps = parseMethodTextToSteps(String(sData.methodText || ''))
+        if (mergedSteps.filter(isMeaningfulStep).length > 0) {
+          structured = {
+            ...structured,
+            title: structured.title || String(sData.title || '').replace(/\*\*/g, '').trim(),
+            source: structured.source || sData.source,
+            steps: mergedSteps
+          }
+          normalized = normalizeExtractedRecipe(structured)
+        }
+      }
+    }
 
     if (!hasMeaningfulExtraction(normalized)) {
       const ingredientsRetry = await runVisionPrompt(
@@ -795,6 +948,7 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     ml: 'ml',
     milliliter: 'ml',
     milliliters: 'ml',
+    cm: 'cm',
     l: 'l',
     litre: 'l',
     litres: 'l',
