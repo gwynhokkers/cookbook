@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="logoTitle">
+  <title id="logoTitle">Megwyn trophy squid logo</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1c3f" />
+      <stop offset="100%" stop-color="#0a1635" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="96" fill="url(#bg)" />
+
+  <g fill="none" stroke="#f8fafc" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M402 228c-21 2-33 11-36 27-4 26 11 77 19 105 9 28 23 58 43 85" stroke-width="20" />
+    <path d="M622 228c21 2 33 11 36 27 4 26-11 77-19 105-9 28-23 58-43 85" stroke-width="20" />
+
+    <path d="M385 252h254c38 0 56 15 56 33 0 13-9 24-24 29l-62 20" stroke-width="22" />
+    <path d="M639 328l58-18c15-4 30-1 39 8 8 9 12 23 8 38-7 27-29 57-56 75-17 11-35 16-51 13" stroke-width="22" />
+
+    <path d="M639 328l-14 106c-7 45-43 78-86 78h-54c-43 0-79-33-86-78l-14-106" stroke-width="26" />
+    <path d="M385 328l-58-18c-15-4-30-1-39 8-8 9-12 23-8 38 7 27 29 57 56 75 17 11 35 16 51 13" stroke-width="22" />
+
+    <circle cx="455" cy="469" r="16" fill="#0a1635" stroke-width="12" />
+    <circle cx="569" cy="469" r="16" fill="#0a1635" stroke-width="12" />
+
+    <path d="M453 511c-16 98-72 173-109 199-31 22-74 19-101-9-28-28-27-72-2-103 11-14 25-24 41-29" stroke-width="22" />
+    <path d="M569 511c16 98 72 173 109 199 31 22 74 19 101-9 28-28 27-72 2-103-11-14-25-24-41-29" stroke-width="22" />
+
+    <path d="M330 611c-28 17-57 12-77-11-18-22-17-55 2-74 14-14 33-19 51-13" stroke-width="20" />
+    <path d="M694 611c28 17 57 12 77-11 18-22 17-55-2-74-14-14-33-19-51-13" stroke-width="20" />
+
+    <path d="M434 509v221c0 36-27 64-62 64-25 0-48-13-62-35-20-31-59-42-90-26" stroke-width="22" />
+    <path d="M590 509v221c0 36 27 64 62 64 25 0 48-13 62-35 20-31 59-42 90-26" stroke-width="22" />
+
+    <path d="M468 511v243c0 53-32 98-79 117" stroke-width="20" />
+    <path d="M556 511v243c0 53 32 98 79 117" stroke-width="20" />
+
+    <path d="M424 860c25 18 55 25 88 25s63-7 88-25" stroke-width="20" />
+  </g>
+</svg>

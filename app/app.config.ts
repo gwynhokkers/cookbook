@@ -137,9 +137,9 @@ export default defineAppConfig({
       ]
     ],
     logo: {
-      alt: '',
-      light: '',
-      dark: ''
+      alt: 'CookBook logo',
+      light: '/megwyn-logo.svg',
+      dark: '/megwyn-logo.svg'
     },
     search: true,
     colorMode: true,
