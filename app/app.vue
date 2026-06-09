@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // import type { ParsedContent } from '@nuxt/content'
 
-const { seo } = useAppConfig()
+const { seo } = useAppConfig();
 
 // const { data: navigation } = await useAsyncData('navigation', () => fetchContentNavigation())
 // const { data: files } = useLazyFetch<ParsedContent[]>('/api/search.json', {
@@ -10,24 +10,20 @@ const { seo } = useAppConfig()
 // })
 
 useHead({
-  meta: [
-    { name: 'viewport', content: 'width=device-width, initial-scale=1' }
-  ],
-  link: [
-    { rel: 'icon', href: '/favicon.ico' }
-  ],
+  meta: [{ name: "viewport", content: "width=device-width, initial-scale=1" }],
+  link: [{ rel: "icon", href: "/favicon.ico" }],
   htmlAttrs: {
-    lang: 'en'
-  }
-})
+    lang: "en",
+  },
+});
 
 useSeoMeta({
   titleTemplate: `%s - ${seo?.siteName}`,
   ogSiteName: seo?.siteName,
-  ogImage: 'https://docs-template.nuxt.dev/social-card.png',
-  twitterImage: 'https://docs-template.nuxt.dev/social-card.png',
-  twitterCard: 'summary_large_image'
-})
+  ogImage: "https://docs-template.nuxt.dev/social-card.png",
+  twitterImage: "https://docs-template.nuxt.dev/social-card.png",
+  twitterCard: "summary_large_image",
+});
 
 // provide('navigation', navigation)
 
@@ -37,33 +33,41 @@ useSeoMeta({
 //   server: false
 // })
 
-const { data: recipes } = useLazyAsyncData('search-recipes', () => $fetch('/api/search.json'), {
-  server: false
-})
+const { data: recipes } = useLazyAsyncData(
+  "search-recipes",
+  () => $fetch("/api/search.json"),
+  {
+    server: false,
+  },
+);
 
-const { data: allRecipes } = await useFetch('/api/recipes')
+const { data: allRecipes } = await useFetch("/api/recipes");
 const navigation = computed(() => {
-  if (!allRecipes.value) return []
+  if (!allRecipes.value) return [];
   return allRecipes.value.map((r: any) => ({
     title: r.title,
-    to: `/recipes/${r.id}`
-  }))
-})
-const links = [{
-  label: 'Docs',
-  icon: 'i-lucide-book',
-  to: '/getting-started'
-}, {
-  label: 'Components',
-  icon: 'i-lucide-box',
-  to: '/components'
-}, {
-  label: 'Roadmap',
-  icon: 'i-lucide-chart-no-axes-gantt',
-  to: '/roadmap'
-}]
+    to: `/recipes/${r.id}`,
+  }));
+});
+const links = [
+  {
+    label: "Docs",
+    icon: "i-lucide-book",
+    to: "/getting-started",
+  },
+  {
+    label: "Components",
+    icon: "i-lucide-box",
+    to: "/components",
+  },
+  {
+    label: "Roadmap",
+    icon: "i-lucide-chart-no-axes-gantt",
+    to: "/roadmap",
+  },
+];
 
-const searchTerm = ref('')
+const searchTerm = ref("");
 </script>
 
 <template>
@@ -71,16 +75,16 @@ const searchTerm = ref('')
     <NuxtLoadingIndicator />
 
     <AppHeader />
-    <ClientOnly>
-      <LazyUContentSearch
+    <!-- <ClientOnly> -->
+    <!-- <LazyUContentSearch
         v-model:search-term="searchTerm"
         :files="recipes"
         shortcut="meta_k"
         :fuse="{ resultLimit: 42 }"
         :navigation="navigation.value"
-      />
-      <!-- :links="links" -->
-    </ClientOnly>
+      /> -->
+    <!-- :links="links" -->
+    <!-- </ClientOnly> -->
     <UMain>
       <NuxtLayout>
         <NuxtPage />

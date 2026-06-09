@@ -43,6 +43,10 @@ export default defineNuxtConfig({
   },
   
   runtimeConfig: {
+    devAuth: process.env.NUXT_DEV_AUTH === 'true',
+    public: {
+      devAuth: process.env.NUXT_DEV_AUTH === 'true'
+    },
     session: {
       password: process.env.NUXT_SESSION_PASSWORD || 'change-me-in-production-min-32-chars-long'
     },
