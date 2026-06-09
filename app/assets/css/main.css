@@ -13,15 +13,50 @@
 
 @source "../content";
 
-
 :root {
-	/* --ui-bg: var(--ui-color-neutral-200); */
+  /* --ui-bg: var(--ui-color-neutral-200); */
 }
 
 @theme {
-	--font-sans: 'Public Sans', sans-serif;
-	/* --font-serif: 'Merriweather', serif; */
+  /* --font-sans: 'Public Sans', sans-serif; */
+  /* --font-serif: 'Merriweather', serif; */
+  --font-sans: "Outfit", sans-serif;
 
-	--font-serif: 'Italiana', serif;
+  --font-serif: "Italiana", serif;
+}
 
+@theme static {
+  --color-biolume-50: #e0fffe;
+  --color-biolume-100: #b3fffd;
+  --color-biolume-200: #7ffffe;
+  --color-biolume-300: #3dfffa;
+  --color-biolume-400: #00f0ee;
+  --color-biolume-500: #00ccca;
+  --color-biolume-600: #009e9c;
+  --color-biolume-700: #00706e;
+  --color-biolume-800: #004645;
+  --color-biolume-900: #002423;
+  --color-biolume-950: #001212;
+
+  --color-abyss-50: #f0e8ff;
+  --color-abyss-100: #d9c5ff;
+  --color-abyss-200: #be98ff;
+  --color-abyss-300: #a06aff;
+  --color-abyss-400: #8242ff;
+  --color-abyss-500: #6622eb;
+  --color-abyss-600: #4f19bb;
+  --color-abyss-700: #3a128a;
+  --color-abyss-800: #260c5a;
+  --color-abyss-900: #13062e;
+  --color-abyss-950: #090318;
+}
+
+:root {
+  --ui-radius: 0.375rem;
+}
+
+.dark {
+  --ui-bg: var(--ui-color-neutral-950);
+  --ui-bg-muted: var(--ui-color-neutral-900);
+  --ui-bg-elevated: var(--ui-color-neutral-800);
 }

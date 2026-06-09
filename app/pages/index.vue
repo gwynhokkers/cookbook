@@ -1,13 +1,9 @@
 <template>
   <UPage>
-    <UPageHero
-      class="font-serif"
-      description=""
-      color="neutral"
-    >
+    <UPageHero class="font-serif" description="" color="neutral">
       <template #title>
         <span class="font-serif">
-          Cook<span class="text-green-600">Book</span>
+          Cook<span class="text-biolume-600">Book</span>
           <!-- <UBadge
             label="Recipes"
             variant="subtle"
@@ -16,19 +12,14 @@
         </span>
       </template>
       <template #description>
-        <p class="font-semibold">
-          A collection of recipes by Meg & Gwyn
-        </p>
+        <p class="font-semibold">A collection of recipes by Meg & Gwyn</p>
       </template>
     </UPageHero>
 
     <UPageBody>
       <UPageSection>
         <Can :ability="createRecipe" as="div" class="mb-6">
-          <UButton
-            icon="i-heroicons-plus"
-            to="/recipes/new"
-          >
+          <UButton icon="i-heroicons-plus" to="/recipes/new">
             Create New Recipe
           </UButton>
         </Can>
@@ -67,12 +58,12 @@
 </template>
 
 <script setup lang="ts">
-import { createRecipe } from '~~/shared/utils/abilities'
+import { createRecipe } from "~~/shared/utils/abilities";
 
-const { data: recipes } = await useFetch('/api/recipes')
+const { data: recipes } = await useFetch("/api/recipes");
 
 useSeoMeta({
-  title: 'CookBook - A collection of recipes by Meg & Gwyn',
-  ogTitle: 'CookBook - A collection of recipes by Meg & Gwyn'
-})
+  title: "CookBook - A collection of recipes by Meg & Gwyn",
+  ogTitle: "CookBook - A collection of recipes by Meg & Gwyn",
+});
 </script>
