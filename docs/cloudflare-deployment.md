@@ -139,6 +139,27 @@ In your Pages project: **Settings** → **Environment variables**. Add:
 | `SPOON_API_KEY` | Spoonacular API key (nutrition/ingredient features) |
 | `MIGRATION_SECRET` | Secret for the `/api/migrate` content-import endpoint |
 
+### Recipe scan from images (Workers AI + AI Gateway)
+
+Recipe extraction uses a **two-stage** Cloudflare pipeline by default: a vision model transcribes the image to plain text, then a text model structures it into recipe fields.
+
+| Variable | Encrypted? | Default | Description |
+|----------|------------|---------|-------------|
+| `NUXT_EXTRACTION_PIPELINE` | No | `two-stage` | Set to `legacy` to use the older single vision+JSON path |
+| `NUXT_EXTRACTION_OCR_MODEL` | No | `@cf/google/gemma-3-12b-it` | Workers AI model for image transcription (stage 1) |
+| `NUXT_EXTRACTION_STRUCTURE_MODEL` | No | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Workers AI text model for JSON structuring (stage 2) |
+
+**Local development** also requires (same as before):
+
+| Variable | Description |
+|----------|-------------|
+| `NUXT_HUB_CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `NUXT_HUB_CLOUDFLARE_API_TOKEN` | API token with Workers AI + AI Gateway read access |
+| `NUXT_HUB_CLOUDFLARE_GATEWAY_ID` | AI Gateway **name** (not account ID) with Workers AI enabled |
+| `NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN` | Optional; required if Authenticated Gateway is enabled |
+
+Stage 2 uses the AI Gateway OpenAI-compatible `/compat/chat/completions` route in local dev; production uses the Workers AI binding from `wrangler.jsonc` (`ai` → `AI`).
+
 After adding, trigger a new deployment so the build and runtime use them.
 
 ---

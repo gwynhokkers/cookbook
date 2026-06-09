@@ -446,178 +446,220 @@ function resolveRegionMethodText(methodData: Record<string, unknown>, methodResp
   return sanitizeTriRegionMethodText(text)
 }
 
-/**
- * Extract recipe information from an image using AI vision model
- */
+interface ExtractionConfig {
+  useTwoStage: boolean
+  ocrModel: string
+  structureModel: string
+}
+
+interface AIClient {
+  run: (model: string, options: Record<string, unknown>) => Promise<unknown>
+  runTextModel: (model: string, options: Record<string, unknown>) => Promise<unknown>
+}
+
+function getExtractionConfig(event?: { context?: unknown }): ExtractionConfig {
+  const config = useRuntimeConfig(event as Parameters<typeof useRuntimeConfig>[0])
+  const pipeline = String(config.extractionPipeline || 'two-stage').toLowerCase()
+  return {
+    useTwoStage: pipeline === 'two-stage',
+    ocrModel: String(config.extractionOcrModel || '@cf/google/gemma-3-12b-it'),
+    structureModel: String(
+      config.extractionStructureModel || '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+    )
+  }
+}
+
+function wrapBindingClient(binding: { run: AIClient['run'] }): AIClient {
+  return {
+    run: (model, options) => binding.run(model, options),
+    runTextModel: (model, options) => binding.run(model, options)
+  }
+}
+
+function throwGatewayHttpError(response: Response, errorText: string, gatewayAuthToken?: string) {
+  let errorData: Record<string, unknown> = { message: errorText }
+  try {
+    errorData = JSON.parse(errorText) as Record<string, unknown>
+  } catch {
+    /* use raw text */
+  }
+
+  if (response.status === 429) {
+    throw createError({
+      statusCode: 429,
+      statusMessage: 'AI rate limit exceeded. Please try again later.'
+    })
+  }
+  if (response.status === 402) {
+    throw createError({
+      statusCode: 402,
+      statusMessage: 'AI quota exceeded. Please check your Cloudflare plan limits.'
+    })
+  }
+
+  const errArr = errorData.error as Array<{ code?: number; message?: string }> | undefined
+  if (response.status === 400 && errArr?.[0]?.code === 2001) {
+    throw createError({
+      statusCode: 400,
+      statusMessage:
+        'AI Gateway not properly configured. Ensure the gateway has Workers AI as a provider and NUXT_HUB_CLOUDFLARE_GATEWAY_ID matches the gateway name.'
+    })
+  }
+
+  const gatewayErr = (errorData.errors as Array<{ code?: number; message?: string }> | undefined)?.[0]
+    || errArr?.[0]
+  const gatewayErrCode = gatewayErr?.code
+  if (response.status === 401 && (gatewayErrCode === 10000 || gatewayErrCode === 2009)) {
+    const cfMsg = gatewayErr?.message || ''
+    const hasGatewayAuth = !!gatewayAuthToken
+    const detail = [
+      cfMsg && `Cloudflare (${gatewayErrCode}): ${cfMsg}`,
+      gatewayErrCode === 2009
+        && 'Code 2009 usually means the Cloudflare API token was rejected. Use a token with Workers AI: Read and AI Gateway: Read.',
+      hasGatewayAuth
+        && 'If Authenticated Gateway is off, try removing NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN.',
+      hasGatewayAuth
+        && 'If Authenticated Gateway is on, set NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN from the AI Gateway dashboard.'
+    ].filter(Boolean).join(' ')
+    throw createError({
+      statusCode: 401,
+      statusMessage: `Authentication failed. ${detail}`
+    })
+  }
+
+  const errorsArr = errorData.errors as Array<{ message?: string }> | undefined
+  const dynamicErrorMessage = (errorData.message as string)
+    || errArr?.[0]?.message
+    || errorsArr?.[0]?.message
+    || errorText
+  throw createError({
+    statusCode: response.status,
+    statusMessage: 'Cloudflare AI API error',
+    data: {
+      detail: normalizeErrorDetail(dynamicErrorMessage, 'Unknown Cloudflare AI API error', 4000)
+    }
+  })
+}
+
+function createGatewayAIClient(
+  accountId: string,
+  gatewayIdForUrl: string,
+  apiToken: string,
+  gatewayAuthToken?: string
+): AIClient {
+  const buildHeaders = (includeCfAig: boolean): Record<string, string> => {
+    const h: Record<string, string> = {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json'
+    }
+    if (includeCfAig && gatewayAuthToken) {
+      h['cf-aig-authorization'] = `Bearer ${gatewayAuthToken}`
+    }
+    return h
+  }
+
+  const gatewayPost = async (url: string, body: string) => {
+    const gatewayFetchAttempt = async (headers: Record<string, string>) => {
+      const res = await fetch(url, { method: 'POST', headers, body })
+      const bodyText = await res.text()
+      return { res, bodyText }
+    }
+
+    let result = await gatewayFetchAttempt(buildHeaders(true))
+    if (!result.res.ok && result.res.status === 401 && gatewayAuthToken) {
+      result = await gatewayFetchAttempt(buildHeaders(false))
+    }
+    if (!result.res.ok && result.res.status === 401 && gatewayAuthToken) {
+      result = await gatewayFetchAttempt({
+        Authorization: `Bearer ${gatewayAuthToken}`,
+        'Content-Type': 'application/json'
+      })
+    }
+
+    if (!result.res.ok) {
+      throwGatewayHttpError(result.res, result.bodyText, gatewayAuthToken)
+    }
+
+    return JSON.parse(result.bodyText) as Record<string, unknown>
+  }
+
+  return {
+    run: async (model, options) => {
+      const url = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayIdForUrl}/workers-ai/${model}`
+      const data = await gatewayPost(url, JSON.stringify(options))
+      return data.result || data
+    },
+    runTextModel: async (model, options) => {
+      const url = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayIdForUrl}/compat/chat/completions`
+      const body = {
+        model: `workers-ai/${model}`,
+        messages: options.messages,
+        max_tokens: options.max_tokens,
+        temperature: options.temperature,
+        top_p: options.top_p,
+        seed: options.seed,
+        response_format: options.response_format
+      }
+      const data = await gatewayPost(url, JSON.stringify(body))
+      const choices = data.choices as Array<{ message?: { content?: string } }> | undefined
+      const content = choices?.[0]?.message?.content
+      if (typeof content === 'string') {
+        return { response: content }
+      }
+      return data.result || data
+    }
+  }
+}
+
 /**
  * Get AI client - works in both local dev (via API) and production (via binding)
- * In production (Nitro v3), use the Workers AI binding from the request: event.req.runtime.cloudflare.env.AI
- * For local dev, we create a proxy that calls Cloudflare API directly (or use process.env.AI if set)
  */
-async function getAIClient(event?: any): Promise<any> {
-  // Method 1: Request-scoped binding (production Cloudflare Workers / Nitro v3)
+async function getAIClient(event?: { req?: { runtime?: { cloudflare?: { env?: { AI?: { run: AIClient['run'] } } } } } }): Promise<AIClient> {
   const binding = event?.req?.runtime?.cloudflare?.env?.AI
   if (binding) {
-    return binding
+    return wrapBindingClient(binding)
   }
-  // Method 2: process.env.AI (fallback when event not passed or binding not on request)
-  if ((process.env as any).AI) {
-    return (process.env as any).AI
+  if ((process.env as { AI?: { run: AIClient['run'] } }).AI) {
+    return wrapBindingClient((process.env as { AI: { run: AIClient['run'] } }).AI)
   }
-  
-  // Method 2: For local development, create AI client using Cloudflare AI Gateway API
-  // This requires AI Gateway to be set up in Cloudflare dashboard
+
   const accountId = process.env.NUXT_HUB_CLOUDFLARE_ACCOUNT_ID
   const apiToken = process.env.NUXT_HUB_CLOUDFLARE_API_TOKEN
   const gatewayId = process.env.NUXT_HUB_CLOUDFLARE_GATEWAY_ID
   const gatewayAuthToken = process.env.NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN
-  
+
   if (accountId && apiToken) {
     if (!gatewayId?.trim()) {
       throw createError({
         statusCode: 500,
-        statusMessage: 'AI Gateway ID not configured. For local development, you need to set up an AI Gateway in Cloudflare dashboard and add NUXT_HUB_CLOUDFLARE_GATEWAY_ID to your .env file. See SETUP_CLOUDFLARE_AI.md for instructions.'
+        statusMessage:
+          'AI Gateway ID not configured. Add NUXT_HUB_CLOUDFLARE_GATEWAY_ID to your .env file.'
       })
     }
-
-    // Cloudflare docs: {gateway_id} in the URL is the AI Gateway *name* (dashboard name when you created it), not a UUID.
-    const gatewayIdForUrl = gatewayId.trim()
-    
-    // Create a proxy object that mimics the AI binding API
-    // This allows us to use the same code path for both local and production
-    return {
-      run: async (model: string, options: any) => {
-        // Cloudflare AI Gateway endpoint for Workers AI
-        // Format: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/workers-ai/{model_id}
-        // {gateway_id} is the gateway name (same string as in the AI Gateway list / create flow), not a separate UUID field.
-        // Model IDs may contain slashes (e.g. @cf/meta/...); Cloudflare docs show them unencoded in the path.
-        const url = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayIdForUrl}/workers-ai/${model}`
-
-        // Prepare request - Cloudflare API expects JSON
-        const requestBody = JSON.stringify(options)
-        
-        // Prepare headers - check if gateway requires additional auth
-        // If Authenticated Gateway is enabled, we need cf-aig-authorization header
-        // See: https://developers.cloudflare.com/ai-gateway/configuration/authentication/
-        const buildHeaders = (includeCfAig: boolean): Record<string, string> => {
-          const h: Record<string, string> = {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json'
-          }
-          if (includeCfAig && gatewayAuthToken) {
-            h['cf-aig-authorization'] = `Bearer ${gatewayAuthToken}`
-          }
-          return h
-        }
-
-        const gatewayFetchAttempt = async (headers: Record<string, string>) => {
-          const res = await fetch(url, { method: 'POST', headers, body: requestBody })
-          const bodyText = await res.text()
-          return { res, bodyText }
-        }
-
-        let result = await gatewayFetchAttempt(buildHeaders(true))
-        if (!result.res.ok && result.res.status === 401 && gatewayAuthToken) {
-          result = await gatewayFetchAttempt(buildHeaders(false))
-        }
-        if (!result.res.ok && result.res.status === 401 && gatewayAuthToken) {
-          result = await gatewayFetchAttempt({
-            'Authorization': `Bearer ${gatewayAuthToken}`,
-            'Content-Type': 'application/json'
-          })
-        }
-
-        const response = result.res
-
-        if (!response.ok) {
-          const errorText = result.bodyText
-
-          let errorData: any
-          try {
-            errorData = JSON.parse(errorText)
-          } catch {
-            errorData = { message: errorText }
-          }
-          
-          // Handle specific error codes
-          if (response.status === 429) {
-            throw createError({
-              statusCode: 429,
-              statusMessage: 'AI rate limit exceeded. Please try again later.'
-            })
-          }
-          if (response.status === 402) {
-            throw createError({
-              statusCode: 402,
-              statusMessage: 'AI quota exceeded. Please check your Cloudflare plan limits.'
-            })
-          }
-          
-          // Handle specific error codes
-          if (response.status === 400 && errorData.error?.[0]?.code === 2001) {
-            throw createError({
-              statusCode: 400,
-              statusMessage: 'AI Gateway not properly configured. Please ensure: 1) You have created an AI Gateway in Cloudflare dashboard, 2) The gateway has "Workers AI" as a provider, 3) NUXT_HUB_CLOUDFLARE_GATEWAY_ID matches the gateway name (not your Account ID). See SETUP_CLOUDFLARE_AI.md for detailed instructions.'
-            })
-          }
-          
-          const gatewayErr = errorData.errors?.[0] || errorData.error?.[0]
-          const gatewayErrCode = gatewayErr?.code
-          if (response.status === 401 && (gatewayErrCode === 10000 || gatewayErrCode === 2009)) {
-            const cfMsg = gatewayErr?.message || ''
-            const hasGatewayAuth = !!gatewayAuthToken
-            const detail = [
-              cfMsg && `Cloudflare (${gatewayErrCode}): ${cfMsg}`,
-              gatewayErrCode === 2009 && 'Code 2009 usually means the Cloudflare API token was rejected for this route. Create a token with Workers AI: Read and AI Gateway: Read, account scope, IP = all addresses.',
-              hasGatewayAuth && 'If Authenticated Gateway is off, try removing NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN (invalid cf-aig). The app also retries with the gateway token as Bearer if set.',
-              'If Authenticated Gateway is on, use the gateway token from the AI Gateway dashboard for NUXT_HUB_CLOUDFLARE_GATEWAY_AUTH_TOKEN.'
-            ].filter(Boolean).join(' ')
-            throw createError({
-              statusCode: 401,
-              statusMessage: `Authentication failed. ${detail}`
-            })
-          }
-          const dynamicErrorMessage = errorData.message || errorData.error?.[0]?.message || errorData.errors?.[0]?.message || errorText
-          const normalizedDynamicErrorMessage = normalizeErrorDetail(dynamicErrorMessage, 'Unknown Cloudflare AI API error', 4000)
-          
-          throw createError({
-            statusCode: response.status,
-            statusMessage: 'Cloudflare AI API error',
-            data: {
-              detail: normalizedDynamicErrorMessage
-            }
-          })
-        }
-        
-        const data = JSON.parse(result.bodyText)
-        
-        // Cloudflare API returns { result: { response: "..." } } or similar structure
-        // Return the result in a format compatible with the binding API
-        return data.result || data
-      }
-    }
+    return createGatewayAIClient(accountId, gatewayId.trim(), apiToken, gatewayAuthToken)
   }
-  
-  // No AI available - provide helpful error
+
   const hasCloudflareCreds = process.env.NUXT_HUB_CLOUDFLARE_ACCOUNT_ID && process.env.NUXT_HUB_CLOUDFLARE_API_TOKEN
   const hasGatewayId = process.env.NUXT_HUB_CLOUDFLARE_GATEWAY_ID
-  
+
   if (!hasCloudflareCreds) {
     throw createError({
       statusCode: 500,
-      statusMessage: 'AI binding not available. For local development, ensure NUXT_HUB_CLOUDFLARE_ACCOUNT_ID, NUXT_HUB_CLOUDFLARE_API_TOKEN, and NUXT_HUB_CLOUDFLARE_GATEWAY_ID are set in .env. See SETUP_CLOUDFLARE_AI.md for instructions.'
-    })
-  } else if (!hasGatewayId) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'AI Gateway ID not configured. Set up an AI Gateway in Cloudflare dashboard and add NUXT_HUB_CLOUDFLARE_GATEWAY_ID to your .env file. See SETUP_CLOUDFLARE_AI.md for instructions.'
-    })
-  } else {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'AI binding not available. Ensure ai: true is set in nuxt.config.ts hub config and restart your dev server. The AI binding may only be fully available in production (Cloudflare Workers).'
+      statusMessage:
+        'AI binding not available. Set NUXT_HUB_CLOUDFLARE_ACCOUNT_ID, NUXT_HUB_CLOUDFLARE_API_TOKEN, and NUXT_HUB_CLOUDFLARE_GATEWAY_ID in .env.'
     })
   }
+  if (!hasGatewayId) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'AI Gateway ID not configured. Add NUXT_HUB_CLOUDFLARE_GATEWAY_ID to your .env file.'
+    })
+  }
+  throw createError({
+    statusCode: 500,
+    statusMessage:
+      'AI binding not available. Ensure the Workers AI binding is configured in wrangler.jsonc for production.'
+  })
 }
 
 const normalizeImageMimeType = (imageMimeType?: string): string => {
@@ -1065,7 +1107,7 @@ const structureFromTranscript = (transcript: TranscribedRecipeText): ExtractedRe
   }
 }
 
-const runVisionPrompt = async (ai: any, visionModel: string, prompt: string, imageDataUrl: string, responseFormat: any, maxTokens = 2200) => {
+const runVisionPrompt = async (ai: AIClient, visionModel: string, prompt: string, imageDataUrl: string, responseFormat: unknown, maxTokens = 2200) => {
   return ai.run(visionModel, {
     messages: [
       {
@@ -1084,6 +1126,430 @@ const runVisionPrompt = async (ai: any, visionModel: string, prompt: string, ima
   })
 }
 
+const coerceVisionResponseToText = (response: unknown): string => {
+  if (typeof response === 'string') {
+    return response.trim()
+  }
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const r = response as Record<string, unknown>
+    if (r.response != null) {
+      return coerceAiResponseToText(r.response).trim()
+    }
+    const result = r.result as Record<string, unknown> | undefined
+    if (result?.response != null) {
+      return coerceAiResponseToText(result.response).trim()
+    }
+    const choices = r.choices as Array<{ message?: { content?: string } }> | undefined
+    const content = choices?.[0]?.message?.content
+    if (typeof content === 'string') {
+      return content.trim()
+    }
+  }
+  return coerceAiResponseToText(response).trim()
+}
+
+const runVisionTranscription = async (
+  ai: AIClient,
+  ocrModel: string,
+  prompt: string,
+  imageDataUrl: string,
+  maxTokens = 2400
+): Promise<string> => {
+  const response = await ai.run(ocrModel, {
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ]
+      }
+    ],
+    max_tokens: maxTokens,
+    temperature: EXTRACTION_TEMPERATURE,
+    top_p: EXTRACTION_TOP_P,
+    seed: EXTRACTION_SEED
+  })
+  return coerceVisionResponseToText(response)
+}
+
+type TranscriptRegion = 'title' | 'ingredients' | 'method' | 'full'
+
+const parseTranscriptFromPlainText = (text: string, region: TranscriptRegion): TranscribedRecipeText => {
+  const raw = text.trim()
+  if (!raw) {
+    return {}
+  }
+
+  if (region === 'ingredients') {
+    return { ingredientsText: raw }
+  }
+  if (region === 'method') {
+    return { methodText: raw }
+  }
+  if (region === 'title') {
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) {
+      return {}
+    }
+    const title = lines[0].replace(/^(title|recipe)\s*:\s*/i, '').trim()
+    const description = lines.slice(1).join('\n').trim()
+    return { title, description: description || undefined }
+  }
+
+  const upper = raw.toUpperCase()
+  const titleIdx = upper.indexOf('TITLE:')
+  const ingIdx = upper.indexOf('INGREDIENTS:')
+  const methodIdx = upper.indexOf('METHOD:')
+  const descIdx = upper.indexOf('DESCRIPTION:')
+
+  if (titleIdx >= 0 || ingIdx >= 0 || methodIdx >= 0) {
+    const sliceSection = (start: number, end: number) =>
+      raw.slice(start, end < 0 ? undefined : end).replace(/^[^:]+:\s*/i, '').trim()
+
+    const titleEnd = [ingIdx, methodIdx, descIdx].filter((i) => i >= 0 && i > titleIdx)[0] ?? -1
+    const descEnd = [ingIdx, methodIdx].filter((i) => i >= 0 && i > descIdx)[0] ?? -1
+    const ingEnd = methodIdx >= 0 && methodIdx > ingIdx ? methodIdx : -1
+
+    const transcript: TranscribedRecipeText = {}
+    if (titleIdx >= 0) {
+      transcript.title = sliceSection(titleIdx, titleEnd)
+    }
+    if (descIdx >= 0) {
+      transcript.description = sliceSection(descIdx, descEnd)
+    }
+    if (ingIdx >= 0) {
+      transcript.ingredientsText = sliceSection(ingIdx, ingEnd)
+    }
+    if (methodIdx >= 0) {
+      transcript.methodText = sliceSection(methodIdx, -1)
+    }
+    return transcript
+  }
+
+  return { ingredientsText: raw, methodText: raw }
+}
+
+const mergeTranscripts = (...parts: TranscribedRecipeText[]): TranscribedRecipeText => {
+  const merged: TranscribedRecipeText = { tags: [] }
+  for (const p of parts) {
+    if (p.title?.trim() && !merged.title?.trim()) {
+      merged.title = p.title.trim()
+    }
+    if (p.description?.trim() && !merged.description?.trim()) {
+      merged.description = p.description.trim()
+    }
+    if (p.ingredientsText?.trim()) {
+      merged.ingredientsText = [merged.ingredientsText, p.ingredientsText.trim()]
+        .filter(Boolean)
+        .join('\n')
+    }
+    if (p.methodText?.trim()) {
+      merged.methodText = [merged.methodText, p.methodText.trim()].filter(Boolean).join('\n')
+    }
+    if (typeof p.servings === 'number' && merged.servings == null) {
+      merged.servings = p.servings
+    }
+    if (Array.isArray(p.tags) && p.tags.length > 0) {
+      merged.tags = [...(merged.tags || []), ...p.tags]
+    }
+  }
+  return merged
+}
+
+const transcriptToPromptText = (transcript: TranscribedRecipeText): string => {
+  const parts: string[] = []
+  if (safeTrim(transcript.title)) {
+    parts.push(`TITLE:\n${transcript.title}`)
+  }
+  if (safeTrim(transcript.description)) {
+    parts.push(`DESCRIPTION:\n${transcript.description}`)
+  }
+  if (safeTrim(transcript.ingredientsText)) {
+    parts.push(`INGREDIENTS:\n${transcript.ingredientsText}`)
+  }
+  if (safeTrim(transcript.methodText)) {
+    parts.push(`METHOD:\n${transcript.methodText}`)
+  }
+  if (transcript.servings != null) {
+    parts.push(`SERVINGS: ${transcript.servings}`)
+  }
+  if (Array.isArray(transcript.tags) && transcript.tags.length > 0) {
+    parts.push(`TAGS: ${transcript.tags.join(', ')}`)
+  }
+  return parts.join('\n\n')
+}
+
+const STRUCTURE_PROMPT_PREFIX = `Given this cookbook transcript, return one JSON object matching the schema.
+Split ingredients into amount, unit, ingredientName, and notes fields.
+Split the method into steps with plain instruction text in each step's content field.
+Do not invent text that is not present in the transcript.
+Transcript:
+`
+
+const runStructureModel = async (
+  ai: AIClient,
+  transcript: TranscribedRecipeText,
+  structureModel: string
+): Promise<ExtractedRecipe> => {
+  const transcriptText = transcriptToPromptText(transcript)
+  const response = await ai.runTextModel(structureModel, {
+    messages: [{ role: 'user', content: STRUCTURE_PROMPT_PREFIX + transcriptText }],
+    max_tokens: 2200,
+    temperature: EXTRACTION_TEMPERATURE,
+    top_p: EXTRACTION_TOP_P,
+    seed: EXTRACTION_SEED,
+    response_format: {
+      type: 'json_schema',
+      json_schema: RECIPE_RESPONSE_SCHEMA
+    }
+  })
+  return parseAiRecipeJson(response)
+}
+
+const acceptMetaLicenseIfNeeded = async (ai: AIClient, model: string) => {
+  if (!model.includes('llama') && !model.includes('meta')) {
+    return
+  }
+  try {
+    await ai.run(model, { messages: [{ role: 'user', content: 'agree' }] })
+  } catch {
+    /* license may already be accepted */
+  }
+}
+
+const FULL_PAGE_TRANSCRIBE_PROMPT = `Transcribe every character visible in this cookbook recipe image.
+Preserve line breaks and list structure. Copy quantities and units exactly as printed.
+Do not summarize, interpret, or output JSON.
+Use these section headings in your response:
+TITLE:
+DESCRIPTION:
+INGREDIENTS:
+METHOD:
+If a section is not visible, omit that heading.`
+
+const REGION_TITLE_TRANSCRIBE_PROMPT = `Transcribe the recipe title and any short introduction visible in this image.
+Preserve line breaks. Copy text exactly as printed. Do not summarize or output JSON.
+Put the recipe name on the first line; any intro paragraph on following lines.`
+
+const REGION_INGREDIENTS_TRANSCRIBE_PROMPT = `Transcribe only the ingredient lines visible in this image.
+One ingredient per line. Copy quantities and units exactly as printed. Do not summarize or output JSON.`
+
+const REGION_METHOD_TRANSCRIBE_PROMPT = `Transcribe only the cooking method / instructions visible in this image.
+Preserve numbered steps (1. 2. 3.) if present. Use newlines between steps. Do not summarize or output JSON.`
+
+const METHOD_ONLY_TRANSCRIBE_PROMPT = `Transcribe only the cooking method / instructions from this image (ignore ingredient lists).
+On two-column layouts, read the method column. Preserve step numbering. Do not output JSON.`
+
+async function finalizeTwoStageExtraction(
+  transcript: TranscribedRecipeText,
+  ai: AIClient,
+  structureModel: string,
+  emptyDetail: string
+): Promise<ExtractedRecipe> {
+  transcript.methodText = sanitizeTriRegionMethodText(String(transcript.methodText || ''))
+  const deterministic = normalizeExtractedRecipe(structureFromTranscript(transcript))
+
+  let structured: ExtractedRecipe | null = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const candidate = normalizeExtractedRecipe(await runStructureModel(ai, transcript, structureModel))
+      if (hasMeaningfulExtraction(candidate)) {
+        structured = candidate
+        break
+      }
+      structured = candidate
+    } catch {
+      /* retry once */
+    }
+  }
+
+  let normalized = deterministic
+  if (structured) {
+    const detScore = getExtractionQualityScore(deterministic)
+    const strScore = getExtractionQualityScore(structured)
+    if (strScore.total >= detScore.total && hasMeaningfulExtraction(structured)) {
+      normalized = structured
+    } else if (hasMeaningfulExtraction(structured) && !hasMeaningfulExtraction(deterministic)) {
+      normalized = structured
+    }
+  }
+
+  if (!hasMeaningfulExtraction(normalized)) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'No extractable recipe content found in this image.',
+      data: { detail: emptyDetail }
+    })
+  }
+
+  return normalized
+}
+
+function rethrowExtractionError(error: unknown) {
+  const err = error as {
+    statusCode?: number
+    statusMessage?: string
+    message?: string
+    data?: { detail?: string }
+  }
+  if (err?.statusCode === 422 || err?.statusCode === 429 || err?.statusCode === 402) {
+    throw error
+  }
+  const originalErrorDetail = normalizeErrorDetail(
+    err?.data?.detail || err?.statusMessage || err?.message,
+    'Unknown error',
+    4000
+  )
+  const statusCode = Number.isInteger(err?.statusCode) && err.statusCode >= 400 && err.statusCode < 600
+    ? err.statusCode
+    : 500
+  throw createError({
+    statusCode,
+    statusMessage: 'Failed to extract recipe',
+    data: { detail: originalErrorDetail }
+  })
+}
+
+async function extractRecipeFromRegionImagesTwoStage(
+  titleBase64: string,
+  ingredientsBase64: string,
+  methodBase64: string,
+  event: Parameters<typeof getExtractionConfig>[0],
+  titleMime?: string,
+  ingredientsMime?: string,
+  methodMime?: string
+): Promise<ExtractedRecipe> {
+  const cfg = getExtractionConfig(event)
+  const ai = await getAIClient(event as Parameters<typeof getAIClient>[0])
+  const titleUrl = `data:${normalizeImageMimeType(titleMime)};base64,${titleBase64}`
+  const ingredientsUrl = `data:${normalizeImageMimeType(ingredientsMime)};base64,${ingredientsBase64}`
+  const methodUrl = `data:${normalizeImageMimeType(methodMime)};base64,${methodBase64}`
+
+  await acceptMetaLicenseIfNeeded(ai, cfg.ocrModel)
+
+  const transcribeRegion = async (
+    prompt: string,
+    imageUrl: string,
+    region: TranscriptRegion,
+    maxTokens: number
+  ) => {
+    let text = await runVisionTranscription(ai, cfg.ocrModel, prompt, imageUrl, maxTokens)
+    if (!text.trim()) {
+      text = await runVisionTranscription(ai, cfg.ocrModel, prompt, imageUrl, maxTokens)
+    }
+    return parseTranscriptFromPlainText(text, region)
+  }
+
+  try {
+    const [titlePart, ingredientsPart, methodPart] = await Promise.all([
+      transcribeRegion(REGION_TITLE_TRANSCRIBE_PROMPT, titleUrl, 'title', 2000),
+      transcribeRegion(REGION_INGREDIENTS_TRANSCRIBE_PROMPT, ingredientsUrl, 'ingredients', 2400),
+      transcribeRegion(REGION_METHOD_TRANSCRIBE_PROMPT, methodUrl, 'method', 2600)
+    ])
+
+    let transcript = mergeTranscripts(titlePart, ingredientsPart, methodPart)
+    let title = safeTrim(transcript.title)
+    if (/^(recipe information|ingredients?|method|instructions?)$/i.test(title)) {
+      transcript.title = ''
+    }
+
+    if (!safeTrim(transcript.methodText)) {
+      const methodRetryText = await runVisionTranscription(
+        ai,
+        cfg.ocrModel,
+        REGION_METHOD_TRANSCRIBE_PROMPT,
+        methodUrl,
+        2600
+      )
+      if (methodRetryText.trim()) {
+        transcript = mergeTranscripts(transcript, parseTranscriptFromPlainText(methodRetryText, 'method'))
+      }
+    }
+
+    return await finalizeTwoStageExtraction(
+      transcript,
+      ai,
+      cfg.structureModel,
+      'AI could not confidently read one or more regions. Try tighter crops with even lighting.'
+    )
+  } catch (error) {
+    rethrowExtractionError(error)
+  }
+}
+
+async function extractRecipeFromImageTwoStage(
+  imageBase64: string,
+  event: Parameters<typeof getExtractionConfig>[0],
+  imageMimeType?: string
+): Promise<ExtractedRecipe> {
+  const cfg = getExtractionConfig(event)
+  const ai = await getAIClient(event as Parameters<typeof getAIClient>[0])
+  const imageDataUrl = `data:${normalizeImageMimeType(imageMimeType)};base64,${imageBase64}`
+
+  await acceptMetaLicenseIfNeeded(ai, cfg.ocrModel)
+
+  try {
+    let text = await runVisionTranscription(
+      ai,
+      cfg.ocrModel,
+      FULL_PAGE_TRANSCRIBE_PROMPT,
+      imageDataUrl,
+      2800
+    )
+    if (!text.trim()) {
+      text = await runVisionTranscription(ai, cfg.ocrModel, FULL_PAGE_TRANSCRIBE_PROMPT, imageDataUrl, 2800)
+    }
+
+    let transcript = parseTranscriptFromPlainText(text, 'full')
+
+    transcript.methodText = sanitizeTriRegionMethodText(String(transcript.methodText || ''))
+    const hasMethod = safeTrim(transcript.methodText).length > 0
+    const hasIngredients = safeTrim(transcript.ingredientsText).length > 0
+
+    if (hasIngredients && !hasMethod) {
+      const methodText = await runVisionTranscription(
+        ai,
+        cfg.ocrModel,
+        METHOD_ONLY_TRANSCRIBE_PROMPT,
+        imageDataUrl,
+        2200
+      )
+      if (methodText.trim()) {
+        transcript = mergeTranscripts(
+          transcript,
+          parseTranscriptFromPlainText(methodText, 'method')
+        )
+      }
+    }
+
+    return await finalizeTwoStageExtraction(
+      transcript,
+      ai,
+      cfg.structureModel,
+      'AI could not confidently extract ingredients or steps. Try scanning ingredients and method separately (two crops), with flat framing and even lighting.'
+    )
+  } catch (error) {
+    const err = error as { statusCode?: number; statusMessage?: string; message?: string; data?: { detail?: string } }
+    if (err?.statusCode === 429) {
+      throw createError({ statusCode: 429, statusMessage: 'AI rate limit exceeded. Please try again later.' })
+    }
+    if (err?.statusCode === 402) {
+      throw createError({ statusCode: 402, statusMessage: 'AI quota exceeded. Please check your plan limits.' })
+    }
+    if (err?.statusCode === 422) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: err.statusMessage || 'No extractable recipe content found in this image.',
+        data: {
+          detail: err?.data?.detail || 'AI could not confidently extract ingredients or steps from this image.'
+        }
+      })
+    }
+    rethrowExtractionError(error)
+  }
+}
+
 /**
  * Extract from three pre-cropped images (title block, ingredients list, method).
  * Three focused vision calls; merged via the same transcript pipeline as full-page extraction.
@@ -1092,12 +1558,43 @@ export async function extractRecipeFromRegionImages(
   titleBase64: string,
   ingredientsBase64: string,
   methodBase64: string,
-  event?: any,
+  event?: Parameters<typeof getExtractionConfig>[0],
   titleMime?: string,
   ingredientsMime?: string,
   methodMime?: string
 ): Promise<ExtractedRecipe> {
-  const ai = await getAIClient(event)
+  if (getExtractionConfig(event).useTwoStage) {
+    return extractRecipeFromRegionImagesTwoStage(
+      titleBase64,
+      ingredientsBase64,
+      methodBase64,
+      event,
+      titleMime,
+      ingredientsMime,
+      methodMime
+    )
+  }
+  return extractRecipeFromRegionImagesLegacy(
+    titleBase64,
+    ingredientsBase64,
+    methodBase64,
+    event,
+    titleMime,
+    ingredientsMime,
+    methodMime
+  )
+}
+
+async function extractRecipeFromRegionImagesLegacy(
+  titleBase64: string,
+  ingredientsBase64: string,
+  methodBase64: string,
+  event?: Parameters<typeof getExtractionConfig>[0],
+  titleMime?: string,
+  ingredientsMime?: string,
+  methodMime?: string
+): Promise<ExtractedRecipe> {
+  const ai = await getAIClient(event as Parameters<typeof getAIClient>[0])
   const visionModel = '@cf/meta/llama-3.2-11b-vision-instruct'
   const titleMimeNorm = normalizeImageMimeType(titleMime)
   const ingredientsMimeNorm = normalizeImageMimeType(ingredientsMime)
@@ -1217,8 +1714,23 @@ Output requirements (strict):
   }
 }
 
-export async function extractRecipeFromImage(imageBase64: string, event?: any, imageMimeType?: string): Promise<ExtractedRecipe> {
-  const ai = await getAIClient(event)
+export async function extractRecipeFromImage(
+  imageBase64: string,
+  event?: Parameters<typeof getExtractionConfig>[0],
+  imageMimeType?: string
+): Promise<ExtractedRecipe> {
+  if (getExtractionConfig(event).useTwoStage) {
+    return extractRecipeFromImageTwoStage(imageBase64, event, imageMimeType)
+  }
+  return extractRecipeFromImageLegacy(imageBase64, event, imageMimeType)
+}
+
+async function extractRecipeFromImageLegacy(
+  imageBase64: string,
+  event?: Parameters<typeof getExtractionConfig>[0],
+  imageMimeType?: string
+): Promise<ExtractedRecipe> {
+  const ai = await getAIClient(event as Parameters<typeof getAIClient>[0])
   const normalizedMimeType = normalizeImageMimeType(imageMimeType)
   const imageDataUrl = `data:${normalizedMimeType};base64,${imageBase64}`
   const visionModel = '@cf/meta/llama-3.2-11b-vision-instruct'
