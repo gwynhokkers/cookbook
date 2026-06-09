@@ -15,18 +15,18 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.3.15",
+    "@electric-sql/pglite": "^0.3.16",
     "@iconify-json/heroicons": "^1.2.3",
-    "@iconify-json/simple-icons": "^1.2.72",
-    "@libsql/client": "^0.17.0",
+    "@iconify-json/simple-icons": "^1.2.86",
+    "@libsql/client": "^0.17.3",
     "@nuxt/fonts": "^0.10.3",
-    "@nuxt/ui": "^4.5.0",
+    "@nuxt/ui": "^4.8.2",
     "@nuxthub/core": "latest",
     "@pinia/nuxt": "^0.11.3",
     "cropperjs": "1.6.2",
     "drizzle-orm": "latest",
     "gray-matter": "^4.0.3",
-    "nanoid": "^5.1.6",
+    "nanoid": "^5.1.11",
     "nuxt-auth-utils": "latest",
     "nuxt-authorization": "^0.3.5",
     "nuxt-og-image": "^5.1.13",
@@ -34,13 +34,13 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.95",
+    "@iconify-json/lucide": "^1.2.111",
     "@nuxt/eslint": "^1.15.2",
-    "@nuxt/image": "1.9.0",
-    "@tailwindcss/typography": "^0.5.19",
-    "better-sqlite3": "^12.6.2",
+    "@nuxt/image": "^2.0.0",
+    "@tailwindcss/typography": "^0.5.20",
+    "better-sqlite3": "^12.10.0",
     "drizzle-kit": "latest",
-    "nuxt": "^4.3.1",
+    "nuxt": "^4.4.8",
     "strip-json-comments": "^5.0.3"
   }
 }
