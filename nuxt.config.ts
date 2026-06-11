@@ -43,6 +43,10 @@ export default defineNuxtConfig({
   },
   
   runtimeConfig: {
+    devAuth: process.env.NUXT_DEV_AUTH === 'true',
+    public: {
+      devAuth: process.env.NUXT_DEV_AUTH === 'true'
+    },
     session: {
       password: process.env.NUXT_SESSION_PASSWORD || 'change-me-in-production-min-32-chars-long'
     },
@@ -60,7 +64,12 @@ export default defineNuxtConfig({
       apiKey: process.env.SPOON_API_KEY
     },
     adminGithubIds: process.env.ADMIN_GITHUB_IDS || '',
-    adminGoogleIds: process.env.ADMIN_GOOGLE_IDS || ''
+    adminGoogleIds: process.env.ADMIN_GOOGLE_IDS || '',
+    /** Recipe scan: two-stage = vision OCR transcript + text model structure; legacy = vision JSON */
+    extractionPipeline: process.env.NUXT_EXTRACTION_PIPELINE || 'two-stage',
+    extractionOcrModel: process.env.NUXT_EXTRACTION_OCR_MODEL || '@cf/google/gemma-3-12b-it',
+    extractionStructureModel:
+      process.env.NUXT_EXTRACTION_STRUCTURE_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
   },
 
   compatibilityDate: '2024-07-30',

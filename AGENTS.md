@@ -31,6 +31,15 @@ Runs on `http://localhost:3000`. NuxtHub auto-provisions PGlite (embedded Postgr
 - **Local dev DB**: NuxtHub uses an embedded SQLite database locally (no external DB needed). Production uses Cloudflare D1.
 - **Seeding data**: Use `curl -X POST http://localhost:3000/api/migrate -H "Authorization: Bearer migration-secret"` to import the 4 sample recipes from `content/recipes/` into the database.
 - **Auth is optional for browsing**: GitHub OAuth (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) is only needed for login/recipe creation. The app works for read-only browsing of public recipes without it.
+- **Local dev auth stub**: Set `NUXT_DEV_AUTH=true` in `.env` and restart the dev server. Visit `/login` to sign in as predefined personas without OAuth:
+
+  | Persona | Email | Role |
+  |---------|-------|------|
+  | Viewer | `dev-viewer@localhost` | viewer |
+  | Editor | `dev-editor@localhost` | editor |
+  | Admin | `dev-admin@localhost` | admin |
+
+  OAuth buttons remain available when configured. Sign out via the header menu to switch personas. Never set `NUXT_DEV_AUTH` in production or `wrangler.jsonc` — the route is gated by `import.meta.dev` and returns 404 outside local dev.
 - **Authorization via `nuxt-authorization`**: All permissions are defined as abilities in `shared/utils/abilities.ts`. Server routes use `authorize(event, ability)` / `allows(event, ability)`. Frontend uses `<Can :ability="...">` components and `denies(ability)` in middleware. Resolvers connect to `nuxt-auth-utils` via plugins in `app/plugins/authorization-resolver.ts` and `server/plugins/authorization-resolver.ts`.
 - **Role-based access**: Users have roles (`viewer`/`editor`/`admin`). Editors can CRUD recipes. Admins can also manage user roles at `/admin/users`. Set `ADMIN_GITHUB_IDS` env var (comma-separated GitHub user IDs) to auto-promote users to admin on login.
 - **Recipe visibility**: Recipes have `visibility` (`public`/`private`). Unauthenticated users see only public recipes. Signed-in users see all.

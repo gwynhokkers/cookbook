@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { header } = useAppConfig()
+const { header } = useAppConfig();
 </script>
 
 <template>
@@ -10,7 +10,7 @@ const { header } = useAppConfig()
       </template>
       <template v-else>
         <span class="font-serif">
-          Cook<span class="text-green-600">Book</span>
+          Cook<span class="text-biolume-600">Book</span>
           <!-- <UBadge
             label="Recipes"
             variant="subtle"
@@ -30,13 +30,12 @@ const { header } = useAppConfig()
     </template>
 
     <template #right>
-      <UContentSearchButton
-        :label="null"
-      />
+      <!-- ONLY AVAILABLE IF NUXT CONTENT IS INSTALLED -->
+      <!-- <UContentSearchButton :label="null" /> -->
 
       <AuthButton />
 
-      <UColorModeButton v-if="header?.colorMode" />
+      <UColorModeButton class="cursor-pointer" v-if="header?.colorMode" />
 
       <template v-if="header?.links">
         <UButton
