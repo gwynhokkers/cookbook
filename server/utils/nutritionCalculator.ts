@@ -1,4 +1,27 @@
 import { convertUnit, getUnitType, normalizeUnit } from './unitConverter'
+import { isCountUnit } from '../../shared/utils/formatIngredient'
+
+const ZERO_NUTRITION: NutritionData = {
+  energyKcal: 0,
+  proteins: 0,
+  carbohydrates: 0,
+  fat: 0,
+  fiber: 0,
+  sugars: 0,
+  salt: 0,
+  sodium: 0
+}
+
+const scaleNutrition = (nutrition: NutritionData, factor: number): NutritionData => ({
+  energyKcal: nutrition.energyKcal * factor,
+  proteins: nutrition.proteins * factor,
+  carbohydrates: nutrition.carbohydrates * factor,
+  fat: nutrition.fat * factor,
+  fiber: nutrition.fiber * factor,
+  sugars: nutrition.sugars * factor,
+  salt: nutrition.salt * factor,
+  sodium: nutrition.sodium * factor
+})
 
 interface SpoonacularNutrition {
   nutrients: Array<{
@@ -146,6 +169,74 @@ export function convertNutritionToUnit(
 }
 
 /**
+ * Compute the scale factor needed to convert nutrition measured for `basisAmount`/
+ * `basisUnit` into nutrition for `targetAmount`/`targetUnit`. Returns null when no
+ * sensible conversion exists.
+ */
+function computeScaleFactor(
+  targetAmount: number,
+  targetUnit: string,
+  basisAmount: number,
+  basisUnit: string
+): number | null {
+  if (!basisAmount || !Number.isFinite(basisAmount)) return null
+  if (!Number.isFinite(targetAmount)) return null
+
+  const sameUnit = normalizeUnit(targetUnit) === normalizeUnit(basisUnit)
+  const bothCount = isCountUnit(targetUnit) && isCountUnit(basisUnit)
+
+  if (sameUnit || bothCount) {
+    return targetAmount / basisAmount
+  }
+
+  const converted = convertUnit(targetAmount, targetUnit, basisUnit)
+  if (converted !== null) {
+    return converted / basisAmount
+  }
+
+  return null
+}
+
+/**
+ * Compute nutrition for a single recipe ingredient from its stored Spoonacular data.
+ *
+ * Two data shapes are supported:
+ * - Parse data (has `nutritionBasis`): absolute nutrition for a specific amount/unit.
+ *   We scale it linearly to the recipe's amount/unit. This is what makes count-based
+ *   ingredients ("1 lemon", "2 cloves garlic") report real nutrition.
+ * - Info data (no `nutritionBasis`): per-100g nutrition, converted via density/weight
+ *   assumptions (legacy behavior; count units yield zero).
+ */
+export function computeIngredientNutrition(
+  spoonacularData: SpoonacularIngredientData | null,
+  amount: number,
+  unit: string
+): NutritionData {
+  const nutrition = extractNutrition(spoonacularData)
+  if (!nutrition) return { ...ZERO_NUTRITION }
+
+  const basis = (spoonacularData as any)?.nutritionBasis as { amount?: number | null; unit?: string } | undefined
+
+  if (basis && basis.amount !== null && basis.amount !== undefined) {
+    const basisAmount = Number(basis.amount)
+    const basisUnit = String(basis.unit ?? '')
+    const factor = computeScaleFactor(amount, unit, basisAmount, basisUnit)
+    if (factor !== null) {
+      return scaleNutrition(nutrition, factor)
+    }
+    // Units diverged from the parsed basis and aren't convertible — fall back to a simple
+    // quantity ratio so we still return a sensible (non-zero) estimate.
+    if (basisAmount > 0 && Number.isFinite(amount)) {
+      return scaleNutrition(nutrition, amount / basisAmount)
+    }
+    return { ...nutrition }
+  }
+
+  // Legacy per-100g info data.
+  return convertNutritionToUnit(nutrition, amount, unit)
+}
+
+/**
  * Aggregate nutrition from multiple ingredients
  */
 export function aggregateNutrition(
@@ -154,7 +245,7 @@ export function aggregateNutrition(
     ingredientName: string
     amount: number
     unit: string
-    nutritionPer100g: NutritionData | null
+    spoonacularData: SpoonacularIngredientData | null
   }>,
   servings: number = 1
 ): RecipeNutrition {
@@ -172,27 +263,11 @@ export function aggregateNutrition(
   const ingredientNutritions: RecipeIngredientNutrition[] = []
   
   for (const ingredient of ingredients) {
-    let nutrition: NutritionData
-    
-    if (ingredient.nutritionPer100g) {
-      nutrition = convertNutritionToUnit(
-        ingredient.nutritionPer100g,
-        ingredient.amount,
-        ingredient.unit
-      )
-    } else {
-      // No nutrition data available
-      nutrition = {
-        energyKcal: 0,
-        proteins: 0,
-        carbohydrates: 0,
-        fat: 0,
-        fiber: 0,
-        sugars: 0,
-        salt: 0,
-        sodium: 0
-      }
-    }
+    const nutrition = computeIngredientNutrition(
+      ingredient.spoonacularData,
+      ingredient.amount,
+      ingredient.unit
+    )
     
     // Add to total
     total.energyKcal += nutrition.energyKcal
