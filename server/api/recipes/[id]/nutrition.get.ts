@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
     ingredientName: ri.ingredient?.name || 'Unknown',
     amount: parseFloat(ri.amount) || 0,
     unit: ri.unit,
-    spoonacularData: (ri.ingredient?.spoonacularData as any) || null
+    spoonacularData: ri.ingredient?.spoonacularData || null
   }))
 
   // Calculate aggregated nutrition
