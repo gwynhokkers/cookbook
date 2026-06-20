@@ -1,9 +1,9 @@
 <template>
   <UPage>
-    <UPageHero class="font-serif" description="" color="neutral">
+    <UPageHero description="" color="neutral">
       <template #title>
         <span class="font-serif">
-          Cook<span class="text-biolume-600">Book</span>
+          Humboldt <span class="text-biolume-600">Kitchen</span>
           <!-- <UBadge
             label="Recipes"
             variant="subtle"
@@ -12,7 +12,7 @@
         </span>
       </template>
       <template #description>
-        <p class="font-semibold">A collection of recipes by Meg & Gwyn</p>
+        <p class="">A collection of recipes by Inky the Squid</p>
       </template>
     </UPageHero>
 
@@ -63,7 +63,7 @@ import { createRecipe } from "~~/shared/utils/abilities";
 const { data: recipes } = await useFetch("/api/recipes");
 
 useSeoMeta({
-  title: "CookBook - A collection of recipes by Meg & Gwyn",
-  ogTitle: "CookBook - A collection of recipes by Meg & Gwyn",
+  title: "Humboldt Kitchen - A collection of recipes by Inky the Squid",
+  ogTitle: "Humboldt Kitchen - A collection of recipes by Inky the Squid",
 });
 </script>

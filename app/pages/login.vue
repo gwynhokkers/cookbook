@@ -39,6 +39,7 @@
         <UButton
           block
           size="lg"
+          class="cursor-pointer"
           @click="signInWithGitHub"
         >
           <UIcon name="i-simple-icons-github" class="mr-2" />
@@ -47,6 +48,7 @@
         <UButton
           block
           size="lg"
+          class="cursor-pointer"
           color="neutral"
           variant="outline"
           @click="signInWithGoogle"
@@ -60,38 +62,56 @@
 </template>
 
 <script setup lang="ts">
-import type { DevAuthPersona } from '~~/shared/dev-auth-personas'
+import type { DevAuthPersona } from "~~/shared/dev-auth-personas";
 
-const config = useRuntimeConfig()
-const devAuthEnabled = import.meta.dev && config.public.devAuth
+const config = useRuntimeConfig();
+const devAuthEnabled = import.meta.dev && config.public.devAuth;
 
-const { loggedIn } = useUserSession()
+const { loggedIn } = useUserSession();
 
 if (loggedIn.value) {
-  await navigateTo('/')
+  await navigateTo("/");
 }
 
 const devPersonas: Array<{
-  key: DevAuthPersona
-  label: string
-  icon: string
-  color: 'neutral' | 'primary' | 'error'
-  variant: 'solid' | 'outline'
+  key: DevAuthPersona;
+  label: string;
+  icon: string;
+  color: "neutral" | "primary" | "error";
+  variant: "solid" | "outline";
 }> = [
-  { key: 'viewer', label: 'Viewer', icon: 'i-heroicons-eye', color: 'neutral', variant: 'outline' },
-  { key: 'editor', label: 'Editor', icon: 'i-heroicons-pencil-square', color: 'primary', variant: 'solid' },
-  { key: 'admin', label: 'Admin', icon: 'i-heroicons-shield-check', color: 'error', variant: 'solid' }
-]
+  {
+    key: "viewer",
+    label: "Viewer",
+    icon: "i-heroicons-eye",
+    color: "neutral",
+    variant: "outline",
+  },
+  {
+    key: "editor",
+    label: "Editor",
+    icon: "i-heroicons-pencil-square",
+    color: "primary",
+    variant: "solid",
+  },
+  {
+    key: "admin",
+    label: "Admin",
+    icon: "i-heroicons-shield-check",
+    color: "error",
+    variant: "solid",
+  },
+];
 
 const signInAsDev = (persona: DevAuthPersona) => {
-  window.location.href = `/auth/dev?persona=${persona}`
-}
+  window.location.href = `/auth/dev?persona=${persona}`;
+};
 
 const signInWithGitHub = () => {
-  window.location.href = '/auth/github'
-}
+  window.location.href = "/auth/github";
+};
 
 const signInWithGoogle = () => {
-  window.location.href = '/auth/google'
-}
+  window.location.href = "/auth/google";
+};
 </script>

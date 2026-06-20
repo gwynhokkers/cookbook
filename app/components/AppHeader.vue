@@ -10,7 +10,7 @@ const { header } = useAppConfig();
       </template>
       <template v-else>
         <span class="font-serif">
-          Cook<span class="text-biolume-600">Book</span>
+          Humboldt <span class="text-biolume-600">Kitchen</span>
           <!-- <UBadge
             label="Recipes"
             variant="subtle"

@@ -90,7 +90,7 @@
       <RecipeIngredientList
         v-if="recipeIngredients && recipeIngredients.length > 0"
       >
-        <ul class="list-disc list-inside space-y-2">
+        <ul class="list-disc list-inside space-y-2 max-w-4xl">
           <li v-for="(ri, index) in recipeIngredients" :key="index">
             {{ ri.amount }} {{ ri.unit }} {{ ri.ingredient?.name || "Unknown" }}
             <span v-if="ri.notes" class="text-gray-600 dark:text-gray-400"
@@ -100,7 +100,7 @@
         </ul>
       </RecipeIngredientList>
 
-      <div v-if="recipe?.steps && recipe.steps.length > 0">
+      <div v-if="recipe?.steps && recipe.steps.length > 0" class="max-w-4xl">
         <h2 class="text-3xl text-pretty mb-4">Steps</h2>
         <div class="space-y-6 divide-y divide-gray-200">
           <RecipeStep
@@ -115,7 +115,7 @@
       </div>
 
       <!-- Nutrition Section -->
-      <div class="mt-8">
+      <div class="mt-8 max-w-4xl">
         <RecipeNutrition :recipe-id="recipeId" />
       </div>
 

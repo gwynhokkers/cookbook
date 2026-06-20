@@ -23,7 +23,7 @@ export default defineAppConfig({
   //     }
   //   },
   seo: {
-    siteName: "CookBook - A Megwyn site",
+    siteName: "Humboldt Kitchen - A Cookbook by Inky the Squid",
   },
   header: {
     navigation: [
