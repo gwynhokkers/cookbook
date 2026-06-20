@@ -333,88 +333,25 @@
         <div>
           <h3 class="text-base font-semibold">Ingredients</h3>
           <p class="text-sm text-muted">
-            Add amount, unit, and ingredient name for best shopping list results.
+            Type ingredients naturally — e.g. <span class="font-medium">1 lemon</span>,
+            <span class="font-medium">2 tbsp butter</span>. Expand a row to fine-tune.
           </p>
         </div>
         <UBadge color="neutral" variant="subtle">{{ state.ingredients.length }} ingredients</UBadge>
       </div>
 
       <UFormField name="ingredients">
-        <div class="space-y-4">
-          <div
+        <div class="space-y-3">
+          <IngredientRow
             v-for="(ingredient, index) in state.ingredients"
             :key="ingredient.rowId"
-            class="rounded-xl border border-default p-4 space-y-3"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <UBadge color="neutral" variant="subtle">Ingredient {{ index + 1 }}</UBadge>
-                <span v-if="ingredient.ingredientName" class="text-sm text-muted truncate max-w-48">
-                  {{ ingredient.ingredientName }}
-                </span>
-              </div>
-              <div class="flex items-center gap-1">
-                <UButton
-                  type="button"
-                  icon="i-heroicons-arrow-up"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="index === 0"
-                  @click="moveIngredient(index, index - 1)"
-                />
-                <UButton
-                  type="button"
-                  icon="i-heroicons-arrow-down"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="index === state.ingredients.length - 1"
-                  @click="moveIngredient(index, index + 1)"
-                />
-                <UButton
-                  type="button"
-                  icon="i-heroicons-trash"
-                  color="error"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="state.ingredients.length === 1"
-                  @click="removeIngredient(Number(index))"
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-12">
-              <div class="md:col-span-2">
-                <UInput
-                  v-model="ingredient.amount"
-                  placeholder="Amount"
-                  type="number"
-                  step="0.1"
-                />
-              </div>
-              <div class="md:col-span-3">
-                <USelect
-                  v-model="ingredient.unit"
-                  :items="unitOptions"
-                  class="w-full"
-                  placeholder="Unit"
-                />
-              </div>
-              <div class="md:col-span-7">
-                <IngredientSelector
-                  v-model="ingredient.ingredientName"
-                  @select="handleIngredientSelect(index, $event)"
-                />
-              </div>
-            </div>
-
-            <UInput
-              v-model="ingredient.notes"
-              placeholder="Notes (optional, e.g. chopped, room temperature)"
-              size="sm"
-            />
-          </div>
+            v-model="state.ingredients[index]"
+            :index="index"
+            :total="state.ingredients.length"
+            @move-up="moveIngredient(index, index - 1)"
+            @move-down="moveIngredient(index, index + 1)"
+            @remove="removeIngredient(Number(index))"
+          />
 
           <UButton
             type="button"
@@ -542,6 +479,14 @@
 <script setup lang="ts">
 import { z } from 'zod'
 import { compressImageForUpload } from '../utils/imageCompression'
+import {
+  COUNT_UNIT,
+  formatIngredientLine,
+  isCountUnit,
+  normalizeParsedIngredient,
+  type ParsedSpoonacularIngredient
+} from '~~/shared/utils/formatIngredient'
+import type { IngredientRowModel } from './IngredientRow.vue'
 
 const props = defineProps<{
   recipe?: any
@@ -563,13 +508,13 @@ const schema = z.object({
   source: z.string().max(500),
   visibility: z.enum(['public', 'private']).default('public'),
   ingredients: z.array(z.object({
+    lineText: z.string().optional(),
     amount: z.union([z.string(), z.number()]).transform(val => String(val)),
     unit: z.string(),
     ingredientName: z.string(),
     ingredientId: z.string().optional(),
     spoonacularIngredientId: z.number().optional(),
     spoonacularData: z.any().optional(),
-    freeText: z.string().optional(), // For free-text input option
     notes: z.string().optional()
   })).default([]),
   steps: z.array(z.object({
@@ -578,28 +523,17 @@ const schema = z.object({
   })).default([])
 })
 
-const unitOptions = [
-  { label: 'cups', value: 'cups' },
-  { label: 'tbsp', value: 'tbsp' },
-  { label: 'tsp', value: 'tsp' },
-  { label: 'grams', value: 'grams' },
-  { label: 'kg', value: 'kg' },
-  { label: 'oz', value: 'oz' },
-  { label: 'lb', value: 'lb' },
-  { label: 'ml', value: 'ml' },
-  { label: 'l', value: 'l' },
-  { label: 'pieces', value: 'pieces' }
-]
-
 let rowIdCounter = 0
 const createRowId = (prefix: 'ingredient' | 'step') => `${prefix}-${rowIdCounter++}`
 
-const createEmptyIngredient = () => ({
+const createEmptyIngredient = (): IngredientRowModel => ({
   rowId: createRowId('ingredient'),
+  lineText: '',
   amount: '',
-  unit: 'cups',
+  unit: COUNT_UNIT,
   ingredientName: '',
-  notes: ''
+  notes: '',
+  parseStatus: 'idle'
 })
 
 const createEmptyStep = () => ({
@@ -644,16 +578,29 @@ const loadRecipeIngredients = async () => {
         ingredient?: { name: string; spoonacularIngredientId?: string; spoonacularData?: any }
         notes?: string
       }>>(`/api/recipes/${props.recipe.id}/ingredients`)
-      return ingredients.map((ri) => ({
-        rowId: createRowId('ingredient'),
-        amount: ri.amount,
-        unit: ri.unit,
-        ingredientName: ri.ingredient?.name || '',
-        ingredientId: ri.ingredientId,
-        spoonacularIngredientId: ri.ingredient?.spoonacularIngredientId ? Number(ri.ingredient.spoonacularIngredientId) : undefined,
-        spoonacularData: ri.ingredient?.spoonacularData,
-        notes: ri.notes || ''
-      }))
+      return ingredients.map((ri) => {
+        const ingredientName = ri.ingredient?.name || ''
+        const spoonacularIngredientId = ri.ingredient?.spoonacularIngredientId
+          ? Number(ri.ingredient.spoonacularIngredientId)
+          : undefined
+        return {
+          rowId: createRowId('ingredient'),
+          lineText: formatIngredientLine({
+            amount: ri.amount,
+            unit: ri.unit,
+            name: ingredientName,
+            notes: ri.notes
+          }),
+          amount: ri.amount,
+          unit: ri.unit,
+          ingredientName,
+          ingredientId: ri.ingredientId,
+          spoonacularIngredientId,
+          spoonacularData: ri.ingredient?.spoonacularData,
+          notes: ri.notes || '',
+          parseStatus: spoonacularIngredientId ? 'matched' : 'manual'
+        } satisfies IngredientRowModel
+      })
     } catch (error) {
       console.error('Failed to load recipe ingredients:', error)
       return []
@@ -670,17 +617,7 @@ const state = reactive({
   tags: props.recipe?.tags || [],
   source: props.recipe?.source || '',
   visibility: (props.recipe?.visibility as 'public' | 'private') || 'public',
-  ingredients: [] as Array<{
-    rowId: string
-    amount: string
-    unit: string
-    ingredientName: string
-    ingredientId?: string
-    spoonacularIngredientId?: number
-    spoonacularData?: any
-    freeText?: string
-    notes?: string
-  }>,
+  ingredients: [] as IngredientRowModel[],
   steps: Array.isArray(props.recipe?.steps)
     ? props.recipe.steps.map((step: { title?: string; content?: string }) => ({
         rowId: createRowId('step'),
@@ -788,50 +725,6 @@ const moveIngredient = (from: number, to: number) => {
   state.ingredients.splice(to, 0, item)
 }
 
-const handleIngredientSelect = async (index: number, ingredient: { name: string; spoonacularIngredientId?: number; spoonacularData?: any }) => {
-  const ing = state.ingredients[index]
-  ing.ingredientName = ingredient.name
-  
-  // Create or find ingredient in database
-  try {
-    // Search for existing ingredient by name
-    const existing = await $fetch<Array<{ id: string; name: string }>>(`/api/ingredients/search?q=${encodeURIComponent(ingredient.name)}`)
-    
-    if (existing && existing.length > 0) {
-      ing.ingredientId = existing[0].id
-      // Update with Spoonacular data if provided
-      if (ingredient.spoonacularIngredientId) {
-        await $fetch(`/api/ingredients/${existing[0].id}`, {
-          // @ts-ignore - $fetch accepts PUT method
-          method: 'PUT',
-          body: {
-            spoonacularIngredientId: ingredient.spoonacularIngredientId,
-            spoonacularData: ingredient.spoonacularData
-          }
-        })
-      }
-    } else {
-      // Create new ingredient
-      const newIngredient = await $fetch<{ id: string }>('/api/ingredients', {
-        method: 'POST',
-        body: {
-          name: ingredient.name,
-          spoonacularIngredientId: ingredient.spoonacularIngredientId,
-          spoonacularData: ingredient.spoonacularData
-        }
-      })
-      ing.ingredientId = newIngredient.id
-    }
-    
-    if (ingredient.spoonacularIngredientId) {
-      ing.spoonacularIngredientId = ingredient.spoonacularIngredientId
-      ing.spoonacularData = ingredient.spoonacularData
-    }
-  } catch (error) {
-    console.error('Failed to save ingredient:', error)
-  }
-}
-
 const addStep = () => {
   state.steps.push(createEmptyStep())
 }
@@ -886,17 +779,28 @@ const normalizeUnit = (unit: string) => {
     liters: 'l',
     litre: 'l',
     litres: 'l',
-    piece: 'pieces',
-    pieces: 'pieces',
-    clove: 'pieces',
-    cloves: 'pieces'
+    piece: COUNT_UNIT,
+    pieces: COUNT_UNIT,
+    item: COUNT_UNIT,
+    items: COUNT_UNIT,
+    whole: COUNT_UNIT,
+    each: COUNT_UNIT,
+    clove: 'cloves',
+    cloves: 'cloves',
+    slice: 'slices',
+    slices: 'slices'
   }
-  return unitMap[normalized] || 'pieces'
+  return unitMap[normalized] || COUNT_UNIT
 }
 
 const hasMeaningfulIngredients = () => {
   return state.ingredients.some(ingredient =>
-    Boolean(ingredient.ingredientName.trim() || ingredient.amount.trim() || (ingredient.notes || '').trim())
+    Boolean(
+      ingredient.ingredientName.trim()
+      || ingredient.amount.trim()
+      || (ingredient.notes || '').trim()
+      || (ingredient.lineText || '').trim()
+    )
   )
 }
 
@@ -910,13 +814,21 @@ const toExtractedIngredients = (ingredients: ExtractedRecipeResponse['ingredient
   }
 
   return ingredients
-    .map((ingredient) => ({
-      rowId: createRowId('ingredient'),
-      amount: String(ingredient.amount || '').trim(),
-      unit: normalizeUnit(String(ingredient.unit || 'pieces')),
-      ingredientName: String(ingredient.ingredientName || '').trim(),
-      notes: String(ingredient.notes || '').trim()
-    }))
+    .map((ingredient) => {
+      const amount = String(ingredient.amount || '').trim()
+      const unit = normalizeUnit(String(ingredient.unit || COUNT_UNIT))
+      const ingredientName = String(ingredient.ingredientName || '').trim()
+      const notes = String(ingredient.notes || '').trim()
+      return {
+        rowId: createRowId('ingredient'),
+        lineText: formatIngredientLine({ amount, unit, name: ingredientName, notes }),
+        amount,
+        unit,
+        ingredientName,
+        notes,
+        parseStatus: 'idle' as const
+      } satisfies IngredientRowModel
+    })
     .filter(ingredient => ingredient.ingredientName)
 }
 
@@ -1014,46 +926,16 @@ const mergeExtractedRecipe = (extracted: ExtractedRecipeResponse, mode: Extracti
   }
 }
 
-const persistIngredientForRow = async (index: number, ingredientName: string) => {
-  const normalizedName = ingredientName.trim()
-  if (!normalizedName) {
-    return
-  }
-
-  const ing = state.ingredients[index]
-  if (!ing) {
-    return
-  }
-
-  // Do not overwrite rows that already have a linked ingredient.
-  if (ing.ingredientId || ing.spoonacularIngredientId) {
-    return
-  }
-
-  try {
-    const existing = await $fetch<Array<{ id: string; name: string }>>(`/api/ingredients/search?q=${encodeURIComponent(normalizedName)}`)
-    if (existing?.length) {
-      ing.ingredientId = existing[0].id
-      return
-    }
-
-    const created = await $fetch<{ id: string }>('/api/ingredients', {
-      method: 'POST',
-      body: {
-        name: normalizedName
-      }
-    })
-
-    ing.ingredientId = created.id
-  } catch (error) {
-    console.error('Failed to persist extracted ingredient:', error)
-  }
-}
-
+// After an AI scan, enrich extracted rows by parsing their natural-language line through
+// Spoonacular. This links a Spoonacular ingredient id + nutrition without writing to the
+// database — persistence happens on submit. Runs as a single batched parse call.
 const hydrateExtractedIngredients = async () => {
   const tasks = state.ingredients
-    .map((ingredient, index) => ({ index, name: ingredient.ingredientName }))
-    .filter(item => item.name.trim())
+    .map((ingredient, index) => ({ index, ingredient }))
+    .filter(({ ingredient }) =>
+      Boolean((ingredient.lineText || '').trim())
+      && !ingredient.spoonacularIngredientId
+    )
 
   if (tasks.length === 0) {
     return
@@ -1061,9 +943,54 @@ const hydrateExtractedIngredients = async () => {
 
   hydratingPrefilledIngredients.value = true
   try {
-    for (const task of tasks) {
-      await persistIngredientForRow(task.index, task.name)
+    const lines = tasks.map(task => task.ingredient.lineText.trim())
+    let parsed: ParsedSpoonacularIngredient[] = []
+    try {
+      parsed = await $fetch<ParsedSpoonacularIngredient[]>('/api/spoonacular/ingredients/parse', {
+        method: 'POST',
+        body: { ingredients: lines }
+      })
+    } catch (error) {
+      console.error('Failed to parse extracted ingredients:', error)
+      return
     }
+
+    if (!Array.isArray(parsed)) {
+      return
+    }
+
+    // Match parse results back to rows by their original line, falling back to position.
+    const byOriginal = new Map<string, ParsedSpoonacularIngredient>()
+    for (const item of parsed) {
+      const key = String(item.original || '').trim().toLowerCase()
+      if (key && !byOriginal.has(key)) {
+        byOriginal.set(key, item)
+      }
+    }
+
+    tasks.forEach((task, position) => {
+      const line = lines[position]
+      const match = byOriginal.get(line.toLowerCase()) || parsed[position]
+      if (!match || !match.name) {
+        return
+      }
+      const normalized = normalizeParsedIngredient(match)
+      const row = state.ingredients[task.index]
+      if (!row) return
+      row.amount = normalized.amount || row.amount
+      row.unit = normalized.unit || row.unit
+      row.ingredientName = normalized.ingredientName || row.ingredientName
+      if (normalized.notes) row.notes = normalized.notes
+      row.spoonacularIngredientId = normalized.spoonacularIngredientId
+      row.spoonacularData = normalized.spoonacularData
+      row.lineText = formatIngredientLine({
+        amount: row.amount,
+        unit: row.unit,
+        name: row.ingredientName,
+        notes: row.notes
+      })
+      row.parseStatus = normalized.spoonacularIngredientId ? 'matched' : 'parsed'
+    })
   } finally {
     hydratingPrefilledIngredients.value = false
   }
@@ -1432,7 +1359,10 @@ const onSubmit = async (event: any) => {
   }
 
   const formData = event.data || event
-  const ingredientsForSubmit = state.ingredients.map(({ rowId, ...ingredient }) => ingredient)
+  const ingredientsForSubmit = state.ingredients.map((ingredient) => {
+    const { rowId, lineText, parseStatus, ...rest } = ingredient
+    return { ...rest, lineText }
+  })
   const stepsForSubmit = state.steps.map(({ rowId, ...step }) => step)
   const submitData = {
     ...formData,

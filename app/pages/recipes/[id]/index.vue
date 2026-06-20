@@ -92,7 +92,13 @@
       >
         <ul class="list-disc list-inside space-y-2 max-w-4xl">
           <li v-for="(ri, index) in recipeIngredients" :key="index">
-            {{ ri.amount }} {{ ri.unit }} {{ ri.ingredient?.name || "Unknown" }}
+            {{
+              formatIngredientLine({
+                amount: ri.amount,
+                unit: ri.unit,
+                name: ri.ingredient?.name || "Unknown",
+              })
+            }}
             <span v-if="ri.notes" class="text-gray-600 dark:text-gray-400"
               >({{ ri.notes }})</span
             >
@@ -127,6 +133,7 @@
 <script setup lang="ts">
 import type { ContentTocLink } from "@nuxt/ui/runtime/components/content/ContentToc.vue";
 import { editRecipe as editRecipeAbility } from "~~/shared/utils/abilities";
+import { formatIngredientLine } from "~~/shared/utils/formatIngredient";
 
 const { seo } = useAppConfig();
 const route = useRoute();

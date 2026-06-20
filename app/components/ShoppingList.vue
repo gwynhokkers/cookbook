@@ -14,7 +14,7 @@
         <div class="flex-1">
           <div class="font-semibold">{{ ingredient.ingredientName }}</div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            {{ ingredient.amount }} {{ ingredient.unit }}
+            {{ formatIngredientLine({ amount: ingredient.amount, unit: ingredient.unit }) }}
             <span v-if="ingredient.recipes.length > 1" class="ml-2">
               (from {{ ingredient.recipes.length }} recipes)
             </span>
@@ -33,6 +33,7 @@
 
 <script setup lang="ts">
 import { useShoppingListStore } from '~/stores/shoppingList'
+import { formatIngredientLine } from '~~/shared/utils/formatIngredient'
 
 const store = useShoppingListStore()
 const checkedItems = ref<Record<string, boolean>>({})
