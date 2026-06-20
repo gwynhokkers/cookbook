@@ -34,11 +34,37 @@ const COUNT_UNITS = new Set([
 ])
 
 /**
+ * Units that should be hidden entirely on display ("1 lemon", not "1 piece lemon").
+ * This is intentionally narrower than {@link isCountUnit}: units like "clove" or "slice"
+ * are counts for nutrition purposes but are still meaningful words to show
+ * ("2 cloves garlic", not "2 garlics").
+ */
+const HIDDEN_DISPLAY_UNITS = new Set([
+  '',
+  'item',
+  'items',
+  'piece',
+  'pieces',
+  'pc',
+  'pcs',
+  'whole',
+  'each'
+])
+
+/**
  * True when the unit represents a count of whole items rather than a measure, e.g.
- * "pieces", "whole", "clove", or an empty/blank unit.
+ * "pieces", "whole", "clove", or an empty/blank unit. Used for nutrition scaling and the
+ * save filters (count units can't be volume/weight converted).
  */
 export function isCountUnit(unit: string | null | undefined): boolean {
   return COUNT_UNITS.has(String(unit ?? '').trim().toLowerCase())
+}
+
+/**
+ * True when the unit should be omitted from the displayed line entirely.
+ */
+function isHiddenDisplayUnit(unit: string | null | undefined): boolean {
+  return HIDDEN_DISPLAY_UNITS.has(String(unit ?? '').trim().toLowerCase())
 }
 
 export interface IngredientLineParts {
@@ -111,7 +137,7 @@ export function formatIngredientLine(parts: IngredientLineParts): string {
 
   const segments: string[] = []
 
-  if (isCountUnit(unit)) {
+  if (isHiddenDisplayUnit(unit)) {
     if (amountText) segments.push(amountText)
     if (name) {
       segments.push(amountValue !== null && amountValue > 1 ? pluralizeName(name) : name)
