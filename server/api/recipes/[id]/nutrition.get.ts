@@ -30,22 +30,15 @@ export default defineEventHandler(async (event) => {
     .leftJoin(schema.ingredients, eq(schema.recipeIngredients.ingredientId, schema.ingredients.id))
     .where(eq(schema.recipeIngredients.recipeId, id))
 
-  // Prepare nutrition data
-  const ingredientsWithNutrition = recipeIngredients.map(ri => {
-    let nutritionPer100g = null
-    
-    if (ri.ingredient?.spoonacularData) {
-      nutritionPer100g = extractNutrition(ri.ingredient.spoonacularData as any)
-    }
-
-    return {
-      ingredientId: ri.ingredientId,
-      ingredientName: ri.ingredient?.name || 'Unknown',
-      amount: parseFloat(ri.amount) || 0,
-      unit: ri.unit,
-      nutritionPer100g
-    }
-  })
+  // Prepare nutrition data. Pass the raw Spoonacular data through so the calculator can
+  // tell parse-derived (absolute) nutrition from per-100g info data.
+  const ingredientsWithNutrition = recipeIngredients.map(ri => ({
+    ingredientId: ri.ingredientId,
+    ingredientName: ri.ingredient?.name || 'Unknown',
+    amount: parseFloat(ri.amount) || 0,
+    unit: ri.unit,
+    spoonacularData: ri.ingredient?.spoonacularData || null
+  }))
 
   // Calculate aggregated nutrition
   const nutrition = aggregateNutrition(ingredientsWithNutrition, servings)

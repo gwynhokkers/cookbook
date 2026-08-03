@@ -195,18 +195,24 @@ export const parseIngredientsCached = defineCachedFunction(
   async (event: any, ingredientStrings: string[]) => {
     const apiKey = getApiKey(event)
     
-    // Spoonacular Parse Ingredients accepts ingredientList as newline-separated string
+    // Spoonacular Parse Ingredients accepts ingredientList as newline-separated string.
+    // The endpoint requires an application/x-www-form-urlencoded body (multipart/form-data
+    // is rejected with 400) and only returns nutrition when includeNutrition=true.
     const ingredientList = ingredientStrings.join('\n')
-    const url = `${SPOONACULAR_API_BASE}/recipes/parseIngredients?apiKey=${apiKey}`
+    const url = `${SPOONACULAR_API_BASE}/recipes/parseIngredients?includeNutrition=true&apiKey=${apiKey}`
     
     try {
-      const formData = new FormData()
-      formData.append('ingredientList', ingredientList)
-      formData.append('servings', '1')
+      const formBody = new URLSearchParams()
+      formBody.append('ingredientList', ingredientList)
+      formBody.append('servings', '1')
+      formBody.append('language', 'en')
       
       const response = await fetch(url, {
         method: 'POST',
-        body: formData
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: formBody.toString()
       })
 
       if (!response.ok) {
@@ -245,8 +251,10 @@ export const parseIngredientsCached = defineCachedFunction(
     name: 'parseIngredients',
     group: 'spoonacular',
     getKey: (event: any, ingredientStrings: string[]) => {
-      // Create cache key from sorted ingredient strings
-      return ingredientStrings.sort().join('|').toLowerCase()
+      // Create cache key from sorted ingredient strings. Use a copy so we never mutate
+      // the caller's array — Array.sort() is in-place and would otherwise reorder the
+      // lines sent to Spoonacular (and therefore the order results come back in).
+      return [...ingredientStrings].sort().join('|').toLowerCase()
     }
   }
 )
