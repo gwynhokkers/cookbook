@@ -69,7 +69,8 @@ export default defineNuxtConfig({
     /** Recipe scan: two-stage = vision OCR transcript + text model structure; legacy = vision JSON */
     extractionPipeline: process.env.NUXT_EXTRACTION_PIPELINE || "two-stage",
     extractionOcrModel:
-      process.env.NUXT_EXTRACTION_OCR_MODEL || "@cf/google/gemma-4-26b-a4b-it",
+      process.env.NUXT_EXTRACTION_OCR_MODEL ||
+      "@cf/meta/llama-3.2-11b-vision-instruct",
     extractionStructureModel:
       process.env.NUXT_EXTRACTION_STRUCTURE_MODEL ||
       "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
