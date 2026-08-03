@@ -18,63 +18,79 @@
 
 <script setup lang="ts">
 definePageMeta({
-  middleware: 'editor'
-})
+  middleware: "editor",
+});
 
-const router = useRouter()
-const toast = useToast()
-const submitting = ref(false)
+const router = useRouter();
+const toast = useToast();
+const submitting = ref(false);
 
 // Avoid focusing the first form input (e.g. ingredient) on initial navigation
 onMounted(() => {
   nextTick(() => {
-    const el = document.activeElement as HTMLElement | null
+    const el = document.activeElement as HTMLElement | null;
     if (el?.blur) {
-      el.blur()
+      el.blur();
     }
-    window.scrollTo(0, 0)
-  })
-})
+    window.scrollTo(0, 0);
+  });
+});
 
 const handleSubmit = async (data: any) => {
-  submitting.value = true
+  submitting.value = true;
   try {
     // Extract ingredients from data
-    const ingredients = data.ingredients || []
-    delete data.ingredients
+    const ingredients = data.ingredients || [];
+    delete data.ingredients;
 
-    const validIngredients = selectValidIngredients(ingredients)
-    await enrichIngredientsViaParse(validIngredients)
+    const validIngredients = selectValidIngredients(ingredients);
+    await enrichIngredientsViaParse(validIngredients);
 
     // Create recipe first
-    const recipe = await $fetch('/api/recipes', {
-      method: 'POST',
-      body: data
-    })
+    const recipe = await $fetch("/api/recipes", {
+      method: "POST",
+      body: data,
+    });
 
-    await linkIngredients(recipe.id, validIngredients)
+    await linkIngredients(recipe.id, validIngredients);
 
     toast.add({
-      title: 'Recipe created',
-      description: `"${recipe.title}" was added successfully.`
-    })
+      title: "Recipe created",
+      description: `"${recipe.title}" was added successfully.`,
+    });
 
     if (recipe?.id) {
-      return await navigateTo(`/recipes/${recipe.id}`, { replace: true })
+      return await navigateTo(`/recipes/${recipe.id}`, { replace: true });
     }
   } catch (error: any) {
-    console.error('Failed to create recipe:', error)
+    console.error("Failed to create recipe:", error);
     toast.add({
-      color: 'error',
-      title: 'Unable to create recipe',
-      description: error?.data?.statusMessage || error?.message || 'Please check the form and try again.'
-    })
+      color: "error",
+      title: "Unable to create recipe",
+      description:
+        error?.data?.statusMessage ||
+        error?.message ||
+        "Please check the form and try again.",
+    });
   } finally {
-    submitting.value = false
+    submitting.value = false;
   }
-}
+};
 
 const handleCancel = () => {
-  router.back()
-}
+  router.back();
+};
+
+useSeoMeta({
+  title: "Create New Recipe",
+  ogTitle: "Create New Recipe",
+  description: "Create a new recipe",
+  ogDescription: "Create a new recipe",
+});
+
+defineOgImage({
+  component: "Recipe",
+  title: "Create New Recipe",
+  description: "Create a new recipe",
+});
 </script>

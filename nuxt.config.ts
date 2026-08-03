@@ -1,120 +1,117 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-
   modules: [
-    '@nuxt/eslint', // '@nuxt/ui',
-    '@nuxt/fonts',
-    'nuxt-og-image',
-    '@nuxt/image',
-    '@nuxt/ui',
-    '@nuxthub/core',
-    'nuxt-auth-utils',
-    'nuxt-authorization',
-    '@pinia/nuxt'
+    "@nuxt/eslint", // '@nuxt/ui',
+    "@nuxt/fonts",
+    "nuxt-og-image",
+    "@nuxt/image",
+    "@nuxt/ui",
+    "@nuxthub/core",
+    "nuxt-auth-utils",
+    "nuxt-authorization",
+    "@pinia/nuxt",
   ],
 
   hub: {
-    db: 'sqlite',
+    db: "sqlite",
     kv: true,
     cache: true,
-    blob: true
+    blob: true,
   },
 
   image: {
     providers: {
       blob: {
-        provider: '~/providers/blob',
-        options: {}
-      }
-    }
+        provider: "~/providers/blob",
+        options: {},
+      },
+    },
   },
 
   devtools: {
-    enabled: true
+    enabled: true,
   },
 
-  css: ['~/assets/css/main.css'],
+  css: ["~/assets/css/main.css"],
 
   // Prerender disabled for D1: DB binding is not available at build time, so routes that
   // call the API (/, /api/search.json) would fail. They are server-rendered on demand in production.
   routeRules: {
-    '/': { prerender: false },
-    '/api/search.json': { prerender: false }
+    "/": { prerender: false },
+    "/api/search.json": { prerender: false },
   },
-  
+
   runtimeConfig: {
-    devAuth: process.env.NUXT_DEV_AUTH === 'true',
+    devAuth: process.env.NUXT_DEV_AUTH === "true",
     public: {
-      devAuth: process.env.NUXT_DEV_AUTH === 'true'
+      devAuth: process.env.NUXT_DEV_AUTH === "true",
     },
     session: {
-      password: process.env.NUXT_SESSION_PASSWORD || 'change-me-in-production-min-32-chars-long'
+      password:
+        process.env.NUXT_SESSION_PASSWORD ||
+        "change-me-in-production-min-32-chars-long",
     },
     oauth: {
       github: {
         clientId: process.env.GITHUB_CLIENT_ID,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
       },
       google: {
         clientId: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET
-      }
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      },
     },
     spoonacular: {
-      apiKey: process.env.SPOON_API_KEY
+      apiKey: process.env.SPOON_API_KEY,
     },
-    adminGithubIds: process.env.ADMIN_GITHUB_IDS || '',
-    adminGoogleIds: process.env.ADMIN_GOOGLE_IDS || '',
+    adminGithubIds: process.env.ADMIN_GITHUB_IDS || "",
+    adminGoogleIds: process.env.ADMIN_GOOGLE_IDS || "",
     /** Recipe scan: two-stage = vision OCR transcript + text model structure; legacy = vision JSON */
-    extractionPipeline: process.env.NUXT_EXTRACTION_PIPELINE || 'two-stage',
-    extractionOcrModel: process.env.NUXT_EXTRACTION_OCR_MODEL || '@cf/google/gemma-3-12b-it',
+    extractionPipeline: process.env.NUXT_EXTRACTION_PIPELINE || "two-stage",
+    extractionOcrModel:
+      process.env.NUXT_EXTRACTION_OCR_MODEL || "@cf/google/gemma-4-26b-a4b-it",
     extractionStructureModel:
-      process.env.NUXT_EXTRACTION_STRUCTURE_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+      process.env.NUXT_EXTRACTION_STRUCTURE_MODEL ||
+      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   },
 
-  compatibilityDate: '2024-07-30',
+  compatibilityDate: "2024-07-30",
 
   typescript: {
-    strict: false
+    strict: false,
   },
 
   eslint: {
     config: {
       stylistic: {
-        commaDangle: 'never',
-        braceStyle: '1tbs'
-      }
-    }
+        commaDangle: "never",
+        braceStyle: "1tbs",
+      },
+    },
   },
 
   fonts: {
     experimental: {
-      processCSSVariables: true
-    }
+      processCSSVariables: true,
+    },
   },
 
   nitro: {
     experimental: {
-      wasm: true
+      wasm: true,
     },
     // Ensure hub: imports are properly resolved
     esbuild: {
       options: {
         // Allow hub: protocol imports
-        target: 'esnext'
-      }
-    }
+        target: "esnext",
+      },
+    },
   },
 
   vite: {
     optimizeDeps: {
-      include: [
-        '@vue/devtools-core',
-        '@vue/devtools-kit',
-        'zod',
-        'cropperjs',
-      ]
-    }
-  }
-
-})
+      include: ["@vue/devtools-core", "@vue/devtools-kit", "zod", "cropperjs"],
+    },
+  },
+});
