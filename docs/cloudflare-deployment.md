@@ -137,7 +137,7 @@ In your Pages project: **Settings** → **Environment variables**. Add:
 | Variable | Description |
 |----------|-------------|
 | `SPOON_API_KEY` | Spoonacular API key (nutrition/ingredient features) |
-| `MIGRATION_SECRET` | Secret for the `/api/migrate` content-import endpoint |
+| `MIGRATION_SECRET` | Secret for `/api/migrate` and `/api/recipes/import` |
 
 ### Recipe scan from images (Workers AI + AI Gateway)
 
@@ -187,6 +187,8 @@ After adding, trigger a new deployment so the build and runtime use them.
    ```
 
    Use the same value you set for `MIGRATION_SECRET` in the Pages environment variables.
+
+6. (Optional) Bulk-import recipes from local Docling OCR via `POST /api/recipes/import` (one recipe JSON per request, Bearer `MIGRATION_SECRET`). See [`scripts/baan-import/README.md`](../scripts/baan-import/README.md). This path stores text only (`imageUrl` is left empty). Duplicate `title` + `source` is skipped.
 
 ---
 

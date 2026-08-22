@@ -186,6 +186,10 @@ The migration script will:
 - Upload images to blob storage
 - Insert recipes into the database
 
+### Bulk import from Docling OCR
+
+Cookbook page scans can be transcribed locally with Docling, reviewed as JSON, then posted one-by-one to `/api/recipes/import` (Bearer `MIGRATION_SECRET`). Recipe images are not uploaded. See [`scripts/baan-import/README.md`](scripts/baan-import/README.md).
+
 ## Project Structure
 
 ```
