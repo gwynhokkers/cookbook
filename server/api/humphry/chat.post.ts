@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
 
     // #region agent log
     humphryDebugLog({
-      hypothesisId: 'A',
+      hypothesisId: 'G',
       location: 'chat.post.ts:catch',
       message: 'chat handler error',
       data: {
@@ -78,6 +78,14 @@ export default defineEventHandler(async (event) => {
       }
     })
     // #endregion
+
+    if (/reading 'choices'|empty response/i.test(message)) {
+      throw createError({
+        statusCode: 502,
+        statusMessage:
+          'Workers AI returned an invalid response. Check NUXT_HUB_CLOUDFLARE_ACCOUNT_ID and NUXT_HUB_CLOUDFLARE_API_TOKEN are set as Cloudflare Pages Production secrets (not build-only CLOUDFLARE_* vars) with Workers AI Read permission.'
+      })
+    }
 
     if (/rate limit|429/i.test(message)) {
       throw createError({

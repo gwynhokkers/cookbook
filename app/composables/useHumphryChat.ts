@@ -59,21 +59,23 @@ function persistMessages(messages: UIMessage[]) {
   }
 
   // #region agent log
-  fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Debug-Session-Id': '4744c8'
-    },
-    body: JSON.stringify({
-      sessionId: '4744c8',
-      hypothesisId: 'D',
-      location: 'useHumphryChat.ts:persistMessages',
-      message: 'persisting messages',
-      data: summarizeClientToolStates(messages),
-      timestamp: Date.now()
-    })
-  }).catch(() => {})
+  if (import.meta.dev) {
+    fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '4744c8'
+      },
+      body: JSON.stringify({
+        sessionId: '4744c8',
+        hypothesisId: 'D',
+        location: 'useHumphryChat.ts:persistMessages',
+        message: 'persisting messages',
+        data: summarizeClientToolStates(messages),
+        timestamp: Date.now()
+      })
+    }).catch(() => {})
+  }
   // #endregion
 
   try {
