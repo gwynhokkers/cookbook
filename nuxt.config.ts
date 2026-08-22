@@ -6,6 +6,7 @@ export default defineNuxtConfig({
     "nuxt-og-image",
     "@nuxt/image",
     "@nuxt/ui",
+    "@comark/nuxt",
     "@nuxthub/core",
     "nuxt-auth-utils",
     "nuxt-authorization",
@@ -74,6 +75,10 @@ export default defineNuxtConfig({
     extractionStructureModel:
       process.env.NUXT_EXTRACTION_STRUCTURE_MODEL ||
       "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    humphryModel:
+      process.env.NUXT_HUMPHRY_MODEL ||
+      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    humphryMaxToolSteps: Number(process.env.NUXT_HUMPHRY_MAX_TOOL_STEPS || 5),
   },
 
   compatibilityDate: "2024-07-30",
