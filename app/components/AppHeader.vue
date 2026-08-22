@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { header } = useAppConfig()
 const { open: searchOpen } = useAppSearch()
+const { loggedIn } = useUserSession()
 </script>
 
 <template>
@@ -35,6 +36,16 @@ const { open: searchOpen } = useAppSearch()
         color="neutral"
         aria-label="Search recipes"
         class="sm:hidden"
+      />
+
+      <UButton
+        v-if="loggedIn"
+        to="/humphry"
+        icon="i-lucide-chef-hat"
+        variant="ghost"
+        color="neutral"
+        aria-label="Ask Humphry"
+        class="hidden sm:inline-flex"
       />
 
       <AuthButton />

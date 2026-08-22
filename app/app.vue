@@ -41,5 +41,7 @@ const { loading, groups } = useRecipeSearchQuery(searchTerm)
     </UMain>
 
     <AppFooter />
+
+    <HumphryFab />
   </UApp>
 </template>

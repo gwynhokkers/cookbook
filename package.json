@@ -21,6 +21,8 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@ai-sdk/vue": "^4.0.77",
+    "@comark/nuxt": "^0.6.2",
     "@electric-sql/pglite": "^0.3.16",
     "@iconify-json/heroicons": "^1.2.3",
     "@iconify-json/simple-icons": "^1.2.86",
@@ -30,6 +32,7 @@
     "@nuxthub/core": "latest",
     "@pinia/nuxt": "^0.11.3",
     "@vueuse/core": "^14.3.0",
+    "ai": "^7.0.77",
     "cropperjs": "1.6.2",
     "drizzle-orm": "latest",
     "gray-matter": "^4.0.3",
@@ -38,6 +41,8 @@
     "nuxt-authorization": "^0.3.5",
     "nuxt-og-image": "^5.1.13",
     "postgres": "latest",
+    "shiki": "^4.4.3",
+    "workers-ai-provider": "^4.0.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
