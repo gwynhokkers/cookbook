@@ -428,6 +428,8 @@ export async function searchRecipes(options: SearchOptions): Promise<RecipeSearc
     ? await searchWithFts({ ...options, limit })
     : await searchWithFallback({ ...options, limit })
 
-  await setCachedSearchResults(cacheKey, results)
+  if (results.length > 0) {
+    await setCachedSearchResults(cacheKey, results)
+  }
   return results
 }

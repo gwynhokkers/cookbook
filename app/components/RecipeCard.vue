@@ -3,32 +3,33 @@
     :to="`/recipes/${recipe.id}`"
     :title="recipe.title"
     :description="recipe.description || undefined"
-    class="relative"
+    class="relative overflow-hidden"
   >
     <template v-if="recipe.imageUrl" #header>
       <NuxtImg
-        class="aspect-square object-cover"
+        class="aspect-square w-full object-cover"
         :src="recipe.imageUrl"
         :alt="recipe.title"
         provider="blob"
       />
     </template>
 
-    <UBadge
-      v-if="recipe.visibility === 'private'"
-      color="warning"
-      class="absolute top-2 left-2 z-10"
-    >
-      <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
-      Private
-    </UBadge>
-
-    <RecipeFavoriteButton
-      v-if="showFavorite"
-      :recipe-id="recipe.id"
-      class="absolute top-2 right-2 z-10"
-      @update:favorited="emit('favorite-changed')"
-    />
+    <div class="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-1 p-2">
+      <UBadge
+        v-if="recipe.visibility === 'private'"
+        color="warning"
+        class="pointer-events-auto max-w-[calc(100%-2.75rem)] shrink truncate"
+      >
+        <UIcon name="i-heroicons-lock-closed" class="size-3 shrink-0" />
+        <span class="sr-only sm:not-sr-only sm:ml-1">Private</span>
+      </UBadge>
+      <RecipeFavoriteButton
+        v-if="showFavorite"
+        :recipe-id="recipe.id"
+        class="pointer-events-auto ml-auto shrink-0"
+        @update:favorited="emit('favorite-changed')"
+      />
+    </div>
 
     <template v-if="recipe.source" #footer>
       <RecipeSource

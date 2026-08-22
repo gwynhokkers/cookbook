@@ -17,7 +17,7 @@ export function useRecipeSearchQuery(searchTerm: Ref<string>) {
     loading.value = true
     try {
       results.value = await $fetch<RecipeSearchResult[]>('/api/recipes/search', {
-        query: { q: trimmed }
+        query: { q: trimmed, scope: 'all' }
       })
     } catch {
       results.value = []
