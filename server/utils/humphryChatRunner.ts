@@ -10,6 +10,7 @@ import {
 import type { H3Event } from 'h3'
 import { HUMPHRY_SYSTEM_PROMPT } from './humphryPrompt'
 import { createHumphryTools } from './humphryTools'
+import { humphryDebugLog, summarizeHumphryToolStates } from './humphryDebugLog'
 import { getWorkersAiModel } from './workersAiModel'
 
 export async function createHumphryChatResponse(
@@ -21,15 +22,82 @@ export async function createHumphryChatResponse(
   const model = getWorkersAiModel(event, String(config.humphryModel))
   const maxSteps = Number(config.humphryMaxToolSteps || 8)
   const tools = createHumphryTools(event, userId)
+  const incomingToolSummary = summarizeHumphryToolStates(uiMessages)
+
+  // #region agent log
+  humphryDebugLog({
+    hypothesisId: 'A',
+    location: 'humphryChatRunner.ts:beforeGenerate',
+    message: 'before generateText',
+    data: {
+      maxSteps,
+      usesBinding: !!event.context?.cloudflare?.env?.AI,
+      ...incomingToolSummary
+    }
+  })
+  // #endregion
 
   const result = await generateText({
     model,
     system: HUMPHRY_SYSTEM_PROMPT,
-    messages: await convertToModelMessages(uiMessages),
+    messages: await convertToModelMessages(uiMessages, {
+      tools,
+      ignoreIncompleteToolCalls: true
+    }),
     tools,
     stopWhen: isStepCount(maxSteps),
-    maxOutputTokens: 4096
+    maxOutputTokens: 4096,
+    onStepFinish: (step) => {
+      // #region agent log
+      humphryDebugLog({
+        hypothesisId: 'F',
+        location: 'humphryChatRunner.ts:onStepFinish',
+        message: 'step finished',
+        data: {
+          stepNumber: step.stepNumber,
+          finishReason: step.finishReason,
+          textLength: step.text.length,
+          toolCalls: step.toolCalls.map((call) => ({
+            toolName: call.toolName,
+            toolCallId: call.toolCallId,
+            input: call.input
+          })),
+          toolResults: step.toolResults.map((res) => ({
+            toolCallId: res.toolCallId,
+            hasOutput: res.output != null
+          }))
+        }
+      })
+      // #endregion
+    }
   })
+
+  const stepSummary = result.steps.map((step) => ({
+    stepNumber: step.stepNumber,
+    finishReason: step.finishReason,
+    toolCallCount: step.toolCalls.length,
+    toolResultCount: step.toolResults.length,
+    toolCallIds: step.toolCalls.map((call) => call.toolCallId),
+    toolResultIds: step.toolResults.map((res) => res.toolCallId),
+    missingResultIds: step.toolCalls
+      .filter((call) => !step.toolResults.some((res) => res.toolCallId === call.toolCallId))
+      .map((call) => call.toolCallId),
+    textLength: step.text.length
+  }))
+
+  // #region agent log
+  humphryDebugLog({
+    hypothesisId: 'B',
+    location: 'humphryChatRunner.ts:afterGenerate',
+    message: 'generateText finished',
+    data: {
+      finishReason: result.finishReason,
+      textLength: result.text.length,
+      stepCount: result.steps.length,
+      steps: stepSummary
+    }
+  })
+  // #endregion
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
@@ -54,6 +122,24 @@ export async function createHumphryChatResponse(
                 type: 'tool-output-available',
                 toolCallId: toolCall.toolCallId,
                 output: toolResult.output ?? null
+              })
+            } else {
+              // #region agent log
+              humphryDebugLog({
+                hypothesisId: 'B',
+                location: 'humphryChatRunner.ts:replayMissingOutput',
+                message: 'tool call missing result during replay',
+                data: {
+                  toolCallId: toolCall.toolCallId,
+                  toolName: toolCall.toolName
+                }
+              })
+              // #endregion
+
+              writer.write({
+                type: 'tool-output-error',
+                toolCallId: toolCall.toolCallId,
+                errorText: 'Tool execution did not complete'
               })
             }
           }

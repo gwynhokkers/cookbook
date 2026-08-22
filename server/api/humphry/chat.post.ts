@@ -2,6 +2,7 @@ import type { UIMessage } from 'ai'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
 import { createHumphryChatResponse } from '../../utils/humphryChatRunner'
+import { humphryDebugLog, summarizeHumphryToolStates } from '../../utils/humphryDebugLog'
 
 const chatBodySchema = z.object({
   messages: z.array(z.object({
@@ -36,10 +37,26 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const uiMessages = parsed.data.messages as UIMessage[]
+  const toolSummary = summarizeHumphryToolStates(uiMessages)
+
+  // #region agent log
+  humphryDebugLog({
+    hypothesisId: 'A',
+    location: 'chat.post.ts:handler',
+    message: 'incoming chat request',
+    data: {
+      userId,
+      ...toolSummary,
+      usesBinding: !!event.context?.cloudflare?.env?.AI
+    }
+  })
+  // #endregion
+
   try {
     return await createHumphryChatResponse(
       event,
-      parsed.data.messages as UIMessage[],
+      uiMessages,
       userId
     )
   } catch (error) {
@@ -48,6 +65,20 @@ export default defineEventHandler(async (event) => {
     }
 
     const message = error instanceof Error ? error.message : 'Humphry failed to respond'
+
+    // #region agent log
+    humphryDebugLog({
+      hypothesisId: 'A',
+      location: 'chat.post.ts:catch',
+      message: 'chat handler error',
+      data: {
+        errorMessage: message,
+        unresolvedCount: toolSummary.unresolvedCount,
+        toolPartCount: toolSummary.toolPartCount
+      }
+    })
+    // #endregion
+
     if (/rate limit|429/i.test(message)) {
       throw createError({
         statusCode: 429,
