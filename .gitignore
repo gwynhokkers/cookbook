@@ -28,9 +28,9 @@ logs
 
 .cursor/plans/
 
-# Local Docling bulk import artefacts
-scripts/baan-import/out/
-scripts/baan-import/spike-input/
+# Local Docling recipe-import artefacts
+scripts/recipe-import/out/
+scripts/recipe-import/spike-input/
 
 # Graphify local knowledge graph (regenerate with `graphify update .`)
 graphify-out/

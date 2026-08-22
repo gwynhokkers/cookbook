@@ -188,7 +188,7 @@ The migration script will:
 
 ### Bulk import from Docling OCR
 
-Cookbook page scans can be transcribed locally with Docling, reviewed as JSON, then posted one-by-one to `/api/recipes/import` (Bearer `MIGRATION_SECRET`). Recipe images are not uploaded. See [`scripts/baan-import/README.md`](scripts/baan-import/README.md).
+Cookbook page scans can be transcribed locally with Docling, reviewed as JSON, then posted one-by-one to `/api/recipes/import` (Bearer `MIGRATION_SECRET`). Recipe images are not uploaded. Works for any book — pass the scan folder and book source string when you run it. See [`scripts/recipe-import/README.md`](scripts/recipe-import/README.md).
 
 ## Project Structure
 

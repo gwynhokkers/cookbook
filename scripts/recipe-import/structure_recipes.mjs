@@ -3,7 +3,11 @@
  * Split Docling page markdown into reviewable recipe JSON drafts.
  *
  * Usage:
- *   node scripts/baan-import/structure_recipes.mjs [--pages DIR] [--output DIR]
+ *   node scripts/recipe-import/structure_recipes.mjs --book-source "Book Title — Author" \
+ *     [--tags thai,snack] [--book slug] [--pages DIR] [--output DIR]
+ *
+ * --book-source is required (stored on each recipe as `source`).
+ * If --book is set and paths are not, uses scripts/recipe-import/out/<book>/{pages,recipes}.
  */
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -16,17 +20,37 @@ import {
 } from './parse-recipe.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_PAGES = path.join(HERE, 'out/pages')
-const DEFAULT_OUT = path.join(HERE, 'out/recipes')
-const DEFAULT_SOURCE = 'Baan — Kay Plunkett-Hogge'
-const DEFAULT_TAGS = ['thai', 'baan']
 
 function parseArgs(argv) {
-  const args = { pages: DEFAULT_PAGES, output: DEFAULT_OUT }
+  const args = {
+    pages: '',
+    output: '',
+    book: '',
+    bookSource: '',
+    tags: []
+  }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
-    if (a === '--pages') args.pages = path.resolve(argv[++i] || DEFAULT_PAGES)
-    else if (a === '--output') args.output = path.resolve(argv[++i] || DEFAULT_OUT)
+    if (a === '--pages') args.pages = path.resolve(argv[++i] || '')
+    else if (a === '--output') args.output = path.resolve(argv[++i] || '')
+    else if (a === '--book') args.book = String(argv[++i] || '').trim()
+    else if (a === '--book-source' || a === '--source') args.bookSource = String(argv[++i] || '').trim()
+    else if (a === '--tags') {
+      args.tags = String(argv[++i] || '')
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+    }
+  }
+  if (!args.pages) {
+    args.pages = args.book
+      ? path.join(HERE, 'out', args.book, 'pages')
+      : path.join(HERE, 'out', 'pages')
+  }
+  if (!args.output) {
+    args.output = args.book
+      ? path.join(HERE, 'out', args.book, 'recipes')
+      : path.join(HERE, 'out', 'recipes')
   }
   return args
 }
@@ -89,6 +113,11 @@ function dedupeRecipes(recipes) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  if (!args.bookSource) {
+    console.error('Usage: node scripts/recipe-import/structure_recipes.mjs --book-source "Book — Author" [--tags a,b] [--book slug] [--pages DIR] [--output DIR]')
+    process.exit(1)
+  }
+
   await mkdir(args.output, { recursive: true })
 
   const files = (await readdir(args.pages))
@@ -114,8 +143,8 @@ async function main() {
     drafts.push({
       title: structured.title,
       description: structured.description,
-      tags: DEFAULT_TAGS,
-      source: DEFAULT_SOURCE,
+      tags: args.tags,
+      source: args.bookSource,
       visibility: 'private',
       servings: structured.servings || undefined,
       steps: structured.steps,
@@ -149,11 +178,17 @@ async function main() {
 
   await writeFile(
     path.join(args.output, 'index.json'),
-    `${JSON.stringify({ count: index.length, recipes: index }, null, 2)}\n`,
+    `${JSON.stringify({
+      count: index.length,
+      bookSource: args.bookSource,
+      tags: args.tags,
+      recipes: index
+    }, null, 2)}\n`,
     'utf8'
   )
 
   console.log(`Wrote ${unique.length} recipe draft(s) to ${args.output}`)
+  console.log(`source=${args.bookSource} tags=${args.tags.join(',') || '(none)'}`)
   for (const row of index) {
     console.log(`  ${row.file}  (${row.ingredients} ingredients, ${row.steps} steps)`)
   }

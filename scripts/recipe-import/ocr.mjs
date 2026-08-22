@@ -3,7 +3,9 @@
  * Batch-convert cookbook page scans with local Docling OCR.
  *
  * Usage:
- *   node scripts/baan-import/ocr.mjs --source "/path/to/scans" [--output scripts/baan-import/out/pages] [--limit N]
+ *   node scripts/recipe-import/ocr.mjs --source "/path/to/scans" [--book slug] [--output DIR] [--limit N]
+ *
+ * If --book is set and --output is not, writes to scripts/recipe-import/out/<book>/pages
  */
 import { spawn } from 'node:child_process'
 import { mkdir, readdir, writeFile, access, symlink, rm } from 'node:fs/promises'
@@ -12,19 +14,22 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff'])
-const DEFAULT_OUTPUT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  'out/pages'
-)
+const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 function parseArgs(argv) {
-  const args = { source: '', output: DEFAULT_OUTPUT, limit: 0 }
+  const args = { source: '', book: '', output: '', limit: 0 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--source') args.source = argv[++i] || ''
-    else if (a === '--output') args.output = path.resolve(argv[++i] || DEFAULT_OUTPUT)
+    else if (a === '--book') args.book = String(argv[++i] || '').trim()
+    else if (a === '--output') args.output = path.resolve(argv[++i] || '')
     else if (a === '--limit') args.limit = Number(argv[++i] || 0)
     else if (!a.startsWith('--') && !args.source) args.source = a
+  }
+  if (!args.output) {
+    args.output = args.book
+      ? path.join(HERE, 'out', args.book, 'pages')
+      : path.join(HERE, 'out', 'pages')
   }
   return args
 }
@@ -88,7 +93,7 @@ async function writeManifest(sourceDir, outputDir, imageNames) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (!args.source) {
-    console.error('Usage: node scripts/baan-import/ocr.mjs --source "/path/to/scans" [--output DIR] [--limit N]')
+    console.error('Usage: node scripts/recipe-import/ocr.mjs --source "/path/to/scans" [--book slug] [--output DIR] [--limit N]')
     process.exit(1)
   }
 
@@ -109,7 +114,7 @@ async function main() {
   let convertSource = sourceDir
   let tmpDir = ''
   if (args.limit > 0 && images.length < (await listImages(sourceDir)).length) {
-    tmpDir = path.join(tmpdir(), `baan-ocr-${Date.now()}`)
+    tmpDir = path.join(tmpdir(), `recipe-ocr-${Date.now()}`)
     await mkdir(tmpDir, { recursive: true })
     for (const name of images) {
       await symlink(path.join(sourceDir, name), path.join(tmpDir, name))

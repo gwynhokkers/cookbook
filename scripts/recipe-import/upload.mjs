@@ -3,29 +3,36 @@
  * POST reviewed recipe JSON drafts to /api/recipes/import.
  *
  * Usage:
- *   MIGRATION_SECRET=... node scripts/baan-import/upload.mjs [--dir DIR] [--base-url URL] [--dry-run] [--limit N]
+ *   set -a; source .env; set +a
+ *   node scripts/recipe-import/upload.mjs [--book slug] [--dir DIR] [--base-url URL] [--dry-run] [--limit N]
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_DIR = path.join(HERE, 'out/recipes')
 const DEFAULT_BASE = 'https://cookbook.megwyn.co.uk'
 
 function parseArgs(argv) {
   const args = {
-    dir: DEFAULT_DIR,
+    book: '',
+    dir: '',
     baseUrl: DEFAULT_BASE,
     dryRun: false,
     limit: 0
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
-    if (a === '--dir') args.dir = path.resolve(argv[++i] || DEFAULT_DIR)
+    if (a === '--book') args.book = String(argv[++i] || '').trim()
+    else if (a === '--dir') args.dir = path.resolve(argv[++i] || '')
     else if (a === '--base-url') args.baseUrl = String(argv[++i] || DEFAULT_BASE).replace(/\/$/, '')
     else if (a === '--dry-run') args.dryRun = true
     else if (a === '--limit') args.limit = Number(argv[++i] || 0)
+  }
+  if (!args.dir) {
+    args.dir = args.book
+      ? path.join(HERE, 'out', args.book, 'recipes')
+      : path.join(HERE, 'out', 'recipes')
   }
   return args
 }

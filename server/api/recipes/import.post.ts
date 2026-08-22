@@ -76,7 +76,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const title = toRecipeTitleCase(titleRaw)
-  const source = String(body?.source || '').trim() || 'Baan — Kay Plunkett-Hogge'
+  const source = String(body?.source || '').trim()
+  if (!source) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Source is required (e.g. book title and author)'
+    })
+  }
   const visibility = body?.visibility === 'public' ? 'public' : 'private'
   const tags = Array.isArray(body?.tags) ? body.tags.map((t) => String(t).trim()).filter(Boolean) : []
   const steps = Array.isArray(body?.steps)

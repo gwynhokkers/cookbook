@@ -188,7 +188,7 @@ After adding, trigger a new deployment so the build and runtime use them.
 
    Use the same value you set for `MIGRATION_SECRET` in the Pages environment variables.
 
-6. (Optional) Bulk-import recipes from local Docling OCR via `POST /api/recipes/import` (one recipe JSON per request, Bearer `MIGRATION_SECRET`). See [`scripts/baan-import/README.md`](../scripts/baan-import/README.md). This path stores text only (`imageUrl` is left empty). Duplicate `title` + `source` is skipped.
+6. (Optional) Bulk-import recipes from local Docling OCR via `POST /api/recipes/import` (one recipe JSON per request, Bearer `MIGRATION_SECRET`). See [`scripts/recipe-import/README.md`](../scripts/recipe-import/README.md). This path stores text only (`imageUrl` is left empty). Duplicate `title` + `source` is skipped.
 
 ---
 
