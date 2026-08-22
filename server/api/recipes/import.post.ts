@@ -2,6 +2,7 @@ import { db, schema } from '../../db'
 import { nanoid } from 'nanoid'
 import { and, eq } from 'drizzle-orm'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
+import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 interface ImportIngredient {
   ingredientName?: string
@@ -164,6 +165,8 @@ export default defineEventHandler(async (event) => {
       unit
     })
   }
+
+  await syncRecipeSearchIndex(recipeId)
 
   return {
     skipped: false,

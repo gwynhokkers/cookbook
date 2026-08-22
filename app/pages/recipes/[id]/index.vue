@@ -59,8 +59,8 @@
         :height="600"
         provider="blob"
       />
-      <div class="flex justify-between">
-        <div class="flex gap-2 mb-2">
+      <div class="flex flex-col gap-2 mb-2">
+        <div v-if="recipe?.tags?.length" class="flex flex-wrap gap-2">
           <UBadge
             v-for="(item, index) in recipe?.tags || []"
             :key="index"
@@ -70,15 +70,7 @@
             {{ item }}
           </UBadge>
         </div>
-        <div class="">
-          <UButton
-            v-if="recipe?.source"
-            icon="i-lucide-link"
-            variant="ghost"
-            :to="recipe.source"
-            target="_blank"
-          />
-        </div>
+        <RecipeSource v-if="recipe?.source" :source="recipe.source" />
       </div>
     </div>
     <USeparator />

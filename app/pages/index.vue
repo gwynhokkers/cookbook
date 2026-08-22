@@ -47,6 +47,13 @@
               <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
               Private
             </UBadge>
+            <template v-if="recipe.source" #footer>
+              <RecipeSource
+                :source="recipe.source"
+                size="sm"
+                :linkable="false"
+              />
+            </template>
           </UPageCard>
         </UPageGrid>
       </UPageSection>

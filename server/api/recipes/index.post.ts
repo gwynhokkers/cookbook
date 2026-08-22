@@ -2,6 +2,7 @@ import { db, schema } from '../../db'
 import { nanoid } from 'nanoid'
 import { createRecipe } from '~~/shared/utils/abilities'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
+import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
   await authorize(event, createRecipe)
@@ -36,6 +37,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.insert(schema.recipes).values(newRecipe)
+  await syncRecipeSearchIndex(recipeId)
 
   return newRecipe
 })

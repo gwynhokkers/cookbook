@@ -1,6 +1,7 @@
 import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
 import { deleteRecipe } from '~~/shared/utils/abilities'
+import { deleteRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
   await authorize(event, deleteRecipe)
@@ -37,6 +38,8 @@ export default defineEventHandler(async (event) => {
 
   await db.delete(schema.recipes)
     .where(eq(schema.recipes.id, id))
+
+  await deleteRecipeSearchIndex(id)
 
   return { success: true }
 })

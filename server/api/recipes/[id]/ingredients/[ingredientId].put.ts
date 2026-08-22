@@ -1,6 +1,7 @@
 import { db, schema } from '../../../../db'
 import { eq, and } from 'drizzle-orm'
 import { editRecipe } from '~~/shared/utils/abilities'
+import { syncRecipeSearchIndex } from '../../../../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
   await authorize(event, editRecipe)
@@ -56,6 +57,8 @@ export default defineEventHandler(async (event) => {
       eq(schema.recipeIngredients.id, ingredientId)
     ))
     .limit(1)
+
+  await syncRecipeSearchIndex(recipeId)
 
   return updated[0]
 })

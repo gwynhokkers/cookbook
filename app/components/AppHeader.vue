@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { header } = useAppConfig();
+const { header } = useAppConfig()
 </script>
 
 <template>
@@ -9,33 +9,29 @@ const { header } = useAppConfig();
         <UColorModeImage v-bind="{ class: 'h-6 w-auto', ...header?.logo }" />
       </template>
       <template v-else>
-        <span class="font-serif">
+        <NuxtLink to="/" class="font-serif">
           Humboldt <span class="text-biolume-600">Kitchen</span>
-          <!-- <UBadge
-            label="Recipes"
-            variant="subtle"
-            class="mb-0.5"
-          /> -->
-        </span>
+        </NuxtLink>
       </template>
     </template>
 
     <template #default>
-      <!-- <UNavigationMenu
-        :items="header?.navigation"
-        class="w-full justify-center"
-      /> -->
-
-      <!-- <UContentSearchButton class="hidden lg:flex" /> -->
+      <UDashboardSearchButton class="hidden sm:flex" />
     </template>
 
     <template #right>
-      <!-- ONLY AVAILABLE IF NUXT CONTENT IS INSTALLED -->
-      <!-- <UContentSearchButton :label="null" /> -->
+      <UButton
+        to="/search"
+        icon="i-lucide-search"
+        variant="ghost"
+        color="neutral"
+        aria-label="Search recipes"
+        class="sm:hidden"
+      />
 
       <AuthButton />
 
-      <UColorModeButton class="cursor-pointer" v-if="header?.colorMode" />
+      <UColorModeButton v-if="header?.colorMode" class="cursor-pointer" />
 
       <template v-if="header?.links">
         <UButton
@@ -45,9 +41,5 @@ const { header } = useAppConfig();
         />
       </template>
     </template>
-
-    <!-- <template #panel>
-      <UNavigationTree :links="mapContentNavigation(navigation)" />
-    </template> -->
   </UHeader>
 </template>

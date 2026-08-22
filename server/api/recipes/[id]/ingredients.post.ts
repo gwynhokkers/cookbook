@@ -2,6 +2,7 @@ import { db, schema } from '../../../db'
 import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { editRecipe } from '~~/shared/utils/abilities'
+import { syncRecipeSearchIndex } from '../../../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
   await authorize(event, editRecipe)
@@ -85,6 +86,8 @@ export default defineEventHandler(async (event) => {
     .leftJoin(schema.ingredients, eq(schema.recipeIngredients.ingredientId, schema.ingredients.id))
     .where(eq(schema.recipeIngredients.id, recipeIngredientId))
     .limit(1)
+
+  await syncRecipeSearchIndex(recipeId)
 
   return newRecipeIngredient[0]
 })

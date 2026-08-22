@@ -3,6 +3,7 @@ import { readFile, readdir } from 'fs/promises'
 import { join } from 'path'
 import matter from 'gray-matter'
 import { nanoid } from 'nanoid'
+import { syncRecipeSearchIndex } from '../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
   // Recipe migration logic
@@ -128,6 +129,7 @@ export default defineEventHandler(async (event) => {
         }
 
         await db.insert(schema.recipes).values(recipe)
+        await syncRecipeSearchIndex(recipeId)
         
         results.push({
           file,
