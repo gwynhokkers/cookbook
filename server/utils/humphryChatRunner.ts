@@ -13,6 +13,67 @@ import { createHumphryTools } from './humphryTools'
 import { humphryDebugLog, summarizeHumphryToolStates } from './humphryDebugLog'
 import { getWorkersAiModel } from './workersAiModel'
 
+function summarizeStepToolParts(step: {
+  content: Array<{ type: string, toolCallId?: string, error?: unknown, output?: unknown, invalid?: boolean }>
+  toolCalls: Array<{ toolCallId: string, toolName: string, input: unknown, invalid?: boolean }>
+  toolResults: Array<{ toolCallId: string, output?: unknown }>
+}) {
+  const toolErrors = step.content
+    .filter((part) => part.type === 'tool-error')
+    .map((part) => ({
+      toolCallId: part.toolCallId,
+      error: part.error instanceof Error
+        ? part.error.message
+        : typeof part.error === 'string'
+          ? part.error
+          : JSON.stringify(part.error)
+    }))
+
+  return {
+    contentTypes: step.content.map((part) => part.type),
+    toolCallCount: step.toolCalls.length,
+    toolResultCount: step.toolResults.length,
+    toolErrorCount: toolErrors.length,
+    invalidToolCallIds: step.toolCalls
+      .filter((call) => call.invalid)
+      .map((call) => call.toolCallId),
+    toolErrors
+  }
+}
+
+function findToolOutcome(
+  step: {
+    content: Array<{ type: string, toolCallId?: string, error?: unknown, output?: unknown }>
+    toolResults: Array<{ toolCallId: string, output?: unknown }>
+  },
+  toolCallId: string
+) {
+  const fromContent = step.content.find((part) =>
+    part.toolCallId === toolCallId
+    && (part.type === 'tool-result' || part.type === 'tool-error')
+  )
+
+  if (fromContent?.type === 'tool-result') {
+    return { kind: 'result' as const, output: fromContent.output ?? null }
+  }
+
+  if (fromContent?.type === 'tool-error') {
+    const errorText = fromContent.error instanceof Error
+      ? fromContent.error.message
+      : typeof fromContent.error === 'string'
+        ? fromContent.error
+        : JSON.stringify(fromContent.error)
+    return { kind: 'error' as const, errorText }
+  }
+
+  const fromResults = step.toolResults.find((result) => result.toolCallId === toolCallId)
+  if (fromResults) {
+    return { kind: 'result' as const, output: fromResults.output ?? null }
+  }
+
+  return { kind: 'missing' as const }
+}
+
 export async function createHumphryChatResponse(
   event: H3Event,
   uiMessages: UIMessage[],
@@ -50,7 +111,7 @@ export async function createHumphryChatResponse(
     onStepFinish: (step) => {
       // #region agent log
       humphryDebugLog({
-        hypothesisId: 'F',
+        hypothesisId: 'I',
         location: 'humphryChatRunner.ts:onStepFinish',
         message: 'step finished',
         data: {
@@ -60,12 +121,10 @@ export async function createHumphryChatResponse(
           toolCalls: step.toolCalls.map((call) => ({
             toolName: call.toolName,
             toolCallId: call.toolCallId,
+            invalid: 'invalid' in call ? Boolean(call.invalid) : false,
             input: call.input
           })),
-          toolResults: step.toolResults.map((res) => ({
-            toolCallId: res.toolCallId,
-            hasOutput: res.output != null
-          }))
+          ...summarizeStepToolParts(step)
         }
       })
       // #endregion
@@ -75,14 +134,8 @@ export async function createHumphryChatResponse(
   const stepSummary = result.steps.map((step) => ({
     stepNumber: step.stepNumber,
     finishReason: step.finishReason,
-    toolCallCount: step.toolCalls.length,
-    toolResultCount: step.toolResults.length,
-    toolCallIds: step.toolCalls.map((call) => call.toolCallId),
-    toolResultIds: step.toolResults.map((res) => res.toolCallId),
-    missingResultIds: step.toolCalls
-      .filter((call) => !step.toolResults.some((res) => res.toolCallId === call.toolCallId))
-      .map((call) => call.toolCallId),
-    textLength: step.text.length
+    textLength: step.text.length,
+    ...summarizeStepToolParts(step)
   }))
 
   // #region agent log
@@ -116,12 +169,32 @@ export async function createHumphryChatResponse(
               input: toolCall.input
             })
 
-            const toolResult = step.toolResults.find((r) => r.toolCallId === toolCall.toolCallId)
-            if (toolResult) {
+            const outcome = findToolOutcome(step, toolCall.toolCallId)
+
+            if (outcome.kind === 'result') {
               writer.write({
                 type: 'tool-output-available',
                 toolCallId: toolCall.toolCallId,
-                output: toolResult.output ?? null
+                output: outcome.output
+              })
+            } else if (outcome.kind === 'error') {
+              // #region agent log
+              humphryDebugLog({
+                hypothesisId: 'I',
+                location: 'humphryChatRunner.ts:replayToolError',
+                message: 'replaying tool-error',
+                data: {
+                  toolCallId: toolCall.toolCallId,
+                  toolName: toolCall.toolName,
+                  errorText: outcome.errorText
+                }
+              })
+              // #endregion
+
+              writer.write({
+                type: 'tool-output-error',
+                toolCallId: toolCall.toolCallId,
+                errorText: outcome.errorText
               })
             } else {
               // #region agent log

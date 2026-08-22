@@ -79,6 +79,10 @@ export default defineNuxtConfig({
       process.env.NUXT_HUMPHRY_MODEL ||
       "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     humphryMaxToolSteps: Number(process.env.NUXT_HUMPHRY_MAX_TOOL_STEPS || 8),
+    // Cloudflare Pages secrets (NUXT_HUB_CLOUDFLARE_*) map into these at runtime.
+    hubCloudflareAccountId: process.env.NUXT_HUB_CLOUDFLARE_ACCOUNT_ID || "",
+    hubCloudflareApiToken: process.env.NUXT_HUB_CLOUDFLARE_API_TOKEN || "",
+    hubCloudflareGatewayId: process.env.NUXT_HUB_CLOUDFLARE_GATEWAY_ID || "",
   },
 
   compatibilityDate: "2024-07-30",

@@ -78,7 +78,8 @@ export function createHumphryTools(event: H3Event, userId: string) {
       description: 'Search the Humboldt Kitchen cookbook by keywords, ingredients, tags, or recipe names.',
       inputSchema: z.object({
         query: z.string().min(2).describe('Search terms such as ingredients, dish type, or recipe name'),
-        limit: z.number().int().min(1).max(15).optional().describe('Maximum number of results (default 8)')
+        // Workers AI sometimes emits numbers as strings ("8") — coerce so validation succeeds.
+        limit: z.coerce.number().int().min(1).max(15).optional().describe('Maximum number of results (default 8)')
       }),
       execute: async ({ query, limit }) => {
         // #region agent log
@@ -90,35 +91,50 @@ export function createHumphryTools(event: H3Event, userId: string) {
         })
         // #endregion
 
-        const favoriteRecipeIds = await getFavoriteRecipeIds(userId)
-        const results = await searchRecipes({
-          query,
-          limit: limit ?? 8,
-          signedIn: true,
-          favoriteRecipeIds
-        })
+        try {
+          const favoriteRecipeIds = await getFavoriteRecipeIds(userId)
+          const results = await searchRecipes({
+            query,
+            limit: limit ?? 8,
+            signedIn: true,
+            favoriteRecipeIds
+          })
 
-        const payload = {
-          recipes: results.map((result) => ({
-            id: result.id,
-            title: result.title,
-            description: result.description,
-            imageUrl: result.imageUrl,
-            tags: result.tags,
-            matchedOn: result.matchedOn
-          }))
+          const payload = {
+            recipes: results.map((result) => ({
+              id: result.id,
+              title: result.title,
+              description: result.description,
+              imageUrl: result.imageUrl,
+              tags: result.tags,
+              matchedOn: result.matchedOn
+            }))
+          }
+
+          // #region agent log
+          humphryDebugLog({
+            hypothesisId: 'C',
+            location: 'humphryTools.ts:search_recipes',
+            message: 'search_recipes execute done',
+            data: { query, resultCount: payload.recipes.length }
+          })
+          // #endregion
+
+          return payload
+        } catch (error) {
+          // #region agent log
+          humphryDebugLog({
+            hypothesisId: 'I',
+            location: 'humphryTools.ts:search_recipes',
+            message: 'search_recipes execute threw',
+            data: {
+              query,
+              errorMessage: error instanceof Error ? error.message : String(error)
+            }
+          })
+          // #endregion
+          throw error
         }
-
-        // #region agent log
-        humphryDebugLog({
-          hypothesisId: 'C',
-          location: 'humphryTools.ts:search_recipes',
-          message: 'search_recipes execute done',
-          data: { query, resultCount: payload.recipes.length }
-        })
-        // #endregion
-
-        return payload
       }
     }),
 
@@ -133,7 +149,7 @@ export function createHumphryTools(event: H3Event, userId: string) {
     list_favorites: tool({
       description: 'List recipes the user has marked as favourites.',
       inputSchema: z.object({
-        limit: z.number().int().min(1).max(20).optional().describe('Maximum number of favourites to return (default 10)')
+        limit: z.coerce.number().int().min(1).max(20).optional().describe('Maximum number of favourites to return (default 10)')
       }),
       execute: async ({ limit }) => {
         const favoriteIds = await getFavoriteRecipeIds(userId)

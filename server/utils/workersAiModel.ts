@@ -5,7 +5,26 @@ import { humphryDebugLog } from './humphryDebugLog'
 
 type CloudflareWorkerEnv = Record<string, string | undefined>
 
-function readCloudflareEnvVar(event: H3Event | undefined, key: string): string | undefined {
+function readEnvValue(event: H3Event | undefined, key: string): string | undefined {
+  const config = event ? useRuntimeConfig(event) : null
+  const fromRuntime = (() => {
+    if (!config) return undefined
+    if (key === 'NUXT_HUB_CLOUDFLARE_ACCOUNT_ID') {
+      return String(config.hubCloudflareAccountId || '').trim() || undefined
+    }
+    if (key === 'NUXT_HUB_CLOUDFLARE_API_TOKEN') {
+      return String(config.hubCloudflareApiToken || '').trim() || undefined
+    }
+    if (key === 'NUXT_HUB_CLOUDFLARE_GATEWAY_ID') {
+      return String(config.hubCloudflareGatewayId || '').trim() || undefined
+    }
+    return undefined
+  })()
+
+  if (fromRuntime) {
+    return fromRuntime
+  }
+
   const cfEnv = event?.context?.cloudflare?.env as CloudflareWorkerEnv | undefined
   const fromCf = cfEnv?.[key]?.trim()
   if (fromCf) {
@@ -22,8 +41,8 @@ function readCloudflareEnvVar(event: H3Event | undefined, key: string): string |
 }
 
 function resolveExplicitRestCredentials(event: H3Event) {
-  const accountId = readCloudflareEnvVar(event, 'NUXT_HUB_CLOUDFLARE_ACCOUNT_ID')
-  const apiKey = readCloudflareEnvVar(event, 'NUXT_HUB_CLOUDFLARE_API_TOKEN')
+  const accountId = readEnvValue(event, 'NUXT_HUB_CLOUDFLARE_ACCOUNT_ID')
+  const apiKey = readEnvValue(event, 'NUXT_HUB_CLOUDFLARE_API_TOKEN')
 
   if (!accountId || !apiKey) {
     return null
@@ -33,7 +52,7 @@ function resolveExplicitRestCredentials(event: H3Event) {
 }
 
 function resolveGatewayId(event: H3Event) {
-  return readCloudflareEnvVar(event, 'NUXT_HUB_CLOUDFLARE_GATEWAY_ID')
+  return readEnvValue(event, 'NUXT_HUB_CLOUDFLARE_GATEWAY_ID')
 }
 
 function wrapBindingRun(binding: Ai, transport: 'rest' | 'binding'): Ai {
@@ -71,6 +90,7 @@ export function getWorkersAiModel(event: H3Event, modelId: string) {
   const gatewayId = resolveGatewayId(event)
   const gateway = gatewayId ? { id: gatewayId } : undefined
   const restCredentials = resolveExplicitRestCredentials(event)
+  const config = useRuntimeConfig(event)
 
   // #region agent log
   humphryDebugLog({
@@ -78,6 +98,8 @@ export function getWorkersAiModel(event: H3Event, modelId: string) {
     location: 'workersAiModel.ts:credentialSources',
     message: 'resolved humphry credential sources',
     data: {
+      hasRuntimeAccountId: !!String(config.hubCloudflareAccountId || '').trim(),
+      hasRuntimeApiToken: !!String(config.hubCloudflareApiToken || '').trim(),
       hasProcessEnvAccountId: !!process.env.NUXT_HUB_CLOUDFLARE_ACCOUNT_ID,
       hasProcessEnvApiToken: !!process.env.NUXT_HUB_CLOUDFLARE_API_TOKEN,
       hasCfEnvAccountId: !!(
@@ -93,8 +115,6 @@ export function getWorkersAiModel(event: H3Event, modelId: string) {
   })
   // #endregion
 
-  // Prefer REST with explicit NUXT_HUB_* secrets. On Cloudflare Pages these live on
-  // event.context.cloudflare.env, not process.env.
   if (restCredentials) {
     // #region agent log
     humphryDebugLog({
