@@ -4,6 +4,7 @@
  */
 
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
+import { parseServings } from '~~/shared/utils/parseServings'
 
 export interface ExtractedRecipe {
   title?: string
@@ -1193,8 +1194,20 @@ const parseTranscriptFromPlainText = (text: string, region: TranscriptRegion): T
       return {}
     }
     const title = lines[0].replace(/^(title|recipe)\s*:\s*/i, '').trim()
-    const description = lines.slice(1).join('\n').trim()
-    return { title, description: description || undefined }
+    let servings: number | undefined
+    const descriptionLines: string[] = []
+    for (const line of lines.slice(1)) {
+      if (servings == null && /^(makes|serves)\b/i.test(line)) {
+        servings = parseServings(line)
+      } else {
+        descriptionLines.push(line)
+      }
+    }
+    return {
+      title,
+      description: descriptionLines.join('\n').trim() || undefined,
+      servings
+    }
   }
 
   const upper = raw.toUpperCase()
@@ -1202,13 +1215,15 @@ const parseTranscriptFromPlainText = (text: string, region: TranscriptRegion): T
   const ingIdx = upper.indexOf('INGREDIENTS:')
   const methodIdx = upper.indexOf('METHOD:')
   const descIdx = upper.indexOf('DESCRIPTION:')
+  const servingsIdx = upper.indexOf('SERVINGS:')
 
-  if (titleIdx >= 0 || ingIdx >= 0 || methodIdx >= 0) {
+  if (titleIdx >= 0 || ingIdx >= 0 || methodIdx >= 0 || servingsIdx >= 0) {
     const sliceSection = (start: number, end: number) =>
       raw.slice(start, end < 0 ? undefined : end).replace(/^[^:]+:\s*/i, '').trim()
 
-    const titleEnd = [ingIdx, methodIdx, descIdx].filter((i) => i >= 0 && i > titleIdx)[0] ?? -1
-    const descEnd = [ingIdx, methodIdx].filter((i) => i >= 0 && i > descIdx)[0] ?? -1
+    const titleEnd = [ingIdx, methodIdx, descIdx, servingsIdx].filter((i) => i >= 0 && i > titleIdx)[0] ?? -1
+    const descEnd = [ingIdx, methodIdx, servingsIdx].filter((i) => i >= 0 && i > descIdx)[0] ?? -1
+    const servingsEnd = [ingIdx, methodIdx, descIdx].filter((i) => i >= 0 && i > servingsIdx)[0] ?? -1
     const ingEnd = methodIdx >= 0 && methodIdx > ingIdx ? methodIdx : -1
 
     const transcript: TranscribedRecipeText = {}
@@ -1217,6 +1232,9 @@ const parseTranscriptFromPlainText = (text: string, region: TranscriptRegion): T
     }
     if (descIdx >= 0) {
       transcript.description = sliceSection(descIdx, descEnd)
+    }
+    if (servingsIdx >= 0) {
+      transcript.servings = parseServings(sliceSection(servingsIdx, servingsEnd))
     }
     if (ingIdx >= 0) {
       transcript.ingredientsText = sliceSection(ingIdx, ingEnd)
@@ -1324,11 +1342,13 @@ Do not summarize, interpret, or output JSON.
 Use these section headings in your response:
 TITLE:
 DESCRIPTION:
+SERVINGS:
 INGREDIENTS:
 METHOD:
 If a section is not visible, omit that heading.`
 
 const REGION_TITLE_TRANSCRIBE_PROMPT = `Transcribe the recipe title and any short introduction visible in this image.
+Include a separate line for servings or yield if visible (e.g. "Serves 4" or "Makes 6").
 Preserve line breaks. Copy text exactly as printed. Do not summarize or output JSON.
 Put the recipe name on the first line; any intro paragraph on following lines.`
 
@@ -2259,14 +2279,7 @@ function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     return candidate || `Step ${index + 1}`
   }
 
-  // Extract and round down servings
-  let servings: number | undefined = undefined
-  if (data.servings !== undefined && data.servings !== null) {
-    const servingsValue = typeof data.servings === 'string' ? parseInt(data.servings, 10) : data.servings
-    if (!isNaN(servingsValue) && servingsValue > 0) {
-      servings = Math.floor(servingsValue)
-    }
-  }
+  const servings = parseServings(data.servings)
 
   const rawTitleForNorm =
     typeof data.title === 'string' || typeof data.title === 'number' ? safeTrim(data.title) : ''

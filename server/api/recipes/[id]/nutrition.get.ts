@@ -3,7 +3,10 @@ import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  const servings = Number(getQuery(event).servings) || 1
+  const queryServings = getQuery(event).servings
+  const queryServingsNumber = queryServings !== undefined && queryServings !== ''
+    ? Number(queryServings)
+    : undefined
 
   if (!id) {
     throw createError({
@@ -11,6 +14,24 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Recipe ID is required'
     })
   }
+
+  const recipeRows = await db
+    .select({ servings: schema.recipes.servings })
+    .from(schema.recipes)
+    .where(eq(schema.recipes.id, id))
+    .limit(1)
+
+  if (!recipeRows.length) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Recipe not found'
+    })
+  }
+
+  const recipeServings = recipeRows[0].servings
+  const effectiveServings = (queryServingsNumber && queryServingsNumber > 0)
+    ? Math.floor(queryServingsNumber)
+    : (recipeServings && recipeServings > 0 ? recipeServings : 1)
 
   // Fetch recipe ingredients with ingredient data
   const recipeIngredients = await db
@@ -41,7 +62,7 @@ export default defineEventHandler(async (event) => {
   }))
 
   // Calculate aggregated nutrition
-  const nutrition = aggregateNutrition(ingredientsWithNutrition, servings)
+  const nutrition = aggregateNutrition(ingredientsWithNutrition, effectiveServings)
 
   return nutrition
 })

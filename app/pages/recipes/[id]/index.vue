@@ -119,7 +119,7 @@
 
       <!-- Nutrition Section -->
       <div class="mt-6">
-        <RecipeNutrition :recipe-id="recipeId" />
+        <RecipeNutrition :recipe-id="recipeId" :servings="recipe?.servings ?? undefined" />
       </div>
 
       <USeparator class="mt-8" />

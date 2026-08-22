@@ -141,6 +141,29 @@ export function parseMethodTextToSteps(methodText) {
 }
 
 const SERVES_RE = /^(makes|serves)\b/i
+
+/** Mirrors shared/utils/parseServings.ts */
+function parseServings(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0) {
+      return undefined
+    }
+    return Math.floor(value)
+  }
+  const match = String(value).match(/\d+/)
+  if (!match) {
+    return undefined
+  }
+  const parsed = parseInt(match[0], 10)
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return undefined
+  }
+  return Math.floor(parsed)
+}
+
 const INGREDIENT_HINT = /^(\d|¼|½|¾|a\s+(good\s+)?pinch|a\s+little|oil\b|vegetable oil|for the\b)/i
 const METHOD_HINT = /^(in a |heat |put |serve |place |add |mix |stir |fry |to make |first[, ]|now )/i
 const QTY_SPLIT = /(?<=\S)\s+(?=[\d¼½¾][\d¼½¾/.\s-]*\s*(?:g|kg|ml|l|oz|lb|cm|cups?|tbsp|tsp|tablespoons?|teaspoons?)\b)/gi
@@ -182,7 +205,7 @@ export function structureMarkdownSection(title, body) {
       .filter((l) => l && l !== '<!-- image -->')
   )
 
-  let servings = ''
+  let servings
   const descriptionParts = []
   const ingredientLines = []
   const methodParts = []
@@ -191,7 +214,7 @@ export function structureMarkdownSection(title, body) {
   for (const line of lines) {
     const plain = line.replace(/^#+\s+/, '').trim()
     if (SERVES_RE.test(plain)) {
-      servings = plain
+      servings = parseServings(plain)
       if (phase === 'intro') phase = 'ingredients'
       continue
     }
