@@ -41,7 +41,8 @@ async function handleSignOut() {
 <template>
   <UHeader
     v-model:open="menuOpen"
-    mode="drawer"
+    mode="slideover"
+    :menu="{ side: 'right' }"
     :ui="{ body: 'flex flex-col p-0' }"
   >
     <template #title>

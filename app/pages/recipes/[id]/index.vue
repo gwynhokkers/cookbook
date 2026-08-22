@@ -1,7 +1,7 @@
 <template>
-  <UPage class="container mx-auto flex-col flex gap-4 py-8 px-4">
+  <UPage class="container mx-auto flex flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-8">
     <template #left>
-      <UPageAside>
+      <UPageAside class="hidden lg:block">
         <div class="">
           <UContentToc
             title="On this page"
@@ -11,60 +11,84 @@
             color="neutral"
           />
         </div>
-        <UContentNavigation :navigation="navigation" />
+        <nav v-if="navigation.length" class="mt-6">
+          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+            Recipes
+          </p>
+          <ul class="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+            <li v-for="item in navigation" :key="item.to">
+              <ULink
+                :to="item.to"
+                class="block rounded-md px-2 py-1.5 text-sm text-muted hover:bg-elevated hover:text-highlighted"
+                active-class="bg-elevated text-highlighted font-medium"
+              >
+                {{ item.title }}
+              </ULink>
+            </li>
+          </ul>
+        </nav>
       </UPageAside>
     </template>
-    <div class="flex justify-between items-start mb-4">
-      <h1 class="text-4xl font-serif text-pretty mb-4">
+    <header class="space-y-4">
+      <h1 class="font-serif text-3xl leading-tight text-pretty sm:text-4xl lg:text-5xl">
         {{ recipe?.title }}
       </h1>
-      <div class="flex gap-2 items-center">
-        <RecipeFavoriteButton
-          v-if="recipe"
-          :recipe-id="recipe.id"
-          class="shrink-0"
-        />
-        <UBadge
-          v-if="recipe?.visibility === 'private'"
-          color="warning"
-          variant="subtle"
-        >
-          <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
-          Private
-        </UBadge>
+
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex flex-wrap items-center gap-2">
+          <RecipeFavoriteButton
+            v-if="recipe"
+            :recipe-id="recipe.id"
+            class="shrink-0"
+          />
+          <UBadge
+            v-if="recipe?.visibility === 'private'"
+            color="warning"
+            variant="subtle"
+            class="shrink-0"
+          >
+            <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
+            Private
+          </UBadge>
+        </div>
         <Can v-if="recipe" :ability="editRecipeAbility">
-          <UButton
-            icon="i-heroicons-pencil"
-            variant="ghost"
-            :to="`/recipes/${recipe.id}/edit`"
-          >
-            Edit
-          </UButton>
-          <UButton
-            icon="i-heroicons-trash"
-            variant="ghost"
-            color="error"
-            @click="handleDelete"
-          >
-            Delete
-          </UButton>
+          <div class="flex items-center gap-1">
+            <UButton
+              icon="i-heroicons-pencil"
+              variant="ghost"
+              :to="`/recipes/${recipe.id}/edit`"
+              aria-label="Edit recipe"
+            >
+              <span class="hidden sm:inline">Edit</span>
+            </UButton>
+            <UButton
+              icon="i-heroicons-trash"
+              variant="ghost"
+              color="error"
+              aria-label="Delete recipe"
+              @click="handleDelete"
+            >
+              <span class="hidden sm:inline">Delete</span>
+            </UButton>
+          </div>
         </Can>
       </div>
-    </div>
-    <div class="mb-4">
+    </header>
+
+    <div class="space-y-4 pb-1.5">
       <NuxtPicture
         v-if="recipe?.imageUrl"
         :src="recipe.imageUrl"
         :alt="recipe.title"
         :img-attrs="{
           class:
-            'w-full rounded-lg overflow-hidden mb-4 max-h-[600px] object-cover',
+            'w-full rounded-lg overflow-hidden max-h-[600px] object-cover',
         }"
         :width="800"
         :height="600"
         provider="blob"
       />
-      <div class="flex flex-col gap-2 mb-2">
+      <div class="flex flex-col gap-3">
         <div v-if="recipe?.tags?.length" class="flex flex-wrap gap-2">
           <UBadge
             v-for="(item, index) in recipe?.tags || []"
@@ -79,8 +103,8 @@
       </div>
     </div>
     <USeparator />
-    <UPageBody>
-      <div v-if="recipe?.description" class="mb-8 max-w-4xl prose">
+    <UPageBody class="space-y-8">
+      <div v-if="recipe?.description" class="max-w-4xl prose prose-sm sm:prose-base">
         <p>{{ recipe.description }}</p>
       </div>
 
@@ -104,7 +128,7 @@
       </RecipeIngredientList>
 
       <div v-if="recipe?.steps && recipe.steps.length > 0" class="max-w-4xl">
-        <h2 class="text-3xl text-pretty mb-4">Steps</h2>
+        <h2 class="mb-4 text-2xl text-pretty sm:text-3xl">Steps</h2>
         <div class="space-y-6 divide-y divide-gray-200">
           <RecipeStep
             v-for="(step, index) in recipe.steps"
