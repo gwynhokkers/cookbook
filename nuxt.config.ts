@@ -78,7 +78,7 @@ export default defineNuxtConfig({
     humphryModel:
       process.env.NUXT_HUMPHRY_MODEL ||
       "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    humphryMaxToolSteps: Number(process.env.NUXT_HUMPHRY_MAX_TOOL_STEPS || 5),
+    humphryMaxToolSteps: Number(process.env.NUXT_HUMPHRY_MAX_TOOL_STEPS || 8),
   },
 
   compatibilityDate: "2024-07-30",
