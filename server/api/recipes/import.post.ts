@@ -2,6 +2,7 @@ import { db, schema } from '../../db'
 import { nanoid } from 'nanoid'
 import { and, eq } from 'drizzle-orm'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
+import { normalizeServingsForStorage } from '~~/shared/utils/parseServings'
 import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 interface ImportIngredient {
@@ -17,6 +18,7 @@ interface ImportBody {
   tags?: string[]
   source?: string
   visibility?: string
+  servings?: number
   steps?: Array<{ title?: string; content?: string }>
   ingredients?: ImportIngredient[]
 }
@@ -125,6 +127,7 @@ export default defineEventHandler(async (event) => {
     date: now,
     tags,
     source,
+    servings: normalizeServingsForStorage(body?.servings),
     steps,
     visibility,
     authorId: null,

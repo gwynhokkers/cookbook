@@ -2,6 +2,7 @@ import { db, schema } from '../../db'
 import { eq } from 'drizzle-orm'
 import { editRecipe } from '~~/shared/utils/abilities'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
+import { normalizeServingsForStorage } from '~~/shared/utils/parseServings'
 import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { title, description, imageUrl, date, tags, source, steps, visibility } = body
+  const { title, description, imageUrl, date, tags, source, steps, visibility, servings } = body
 
   const updateData: Record<string, unknown> = {
     updatedAt: new Date()
@@ -45,6 +46,7 @@ export default defineEventHandler(async (event) => {
   if (date !== undefined) updateData.date = new Date(date)
   if (tags !== undefined) updateData.tags = tags
   if (source !== undefined) updateData.source = source
+  if (servings !== undefined) updateData.servings = normalizeServingsForStorage(servings)
   if (steps !== undefined) updateData.steps = steps
   if (visibility !== undefined) updateData.visibility = visibility === 'private' ? 'private' : 'public'
 

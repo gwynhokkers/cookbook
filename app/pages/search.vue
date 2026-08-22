@@ -12,14 +12,14 @@
         <UButton
           :variant="isFavoritesScope ? 'outline' : 'solid'"
           color="neutral"
-          :to="{ path: '/search', query: query.trim() ? { q: query.trim() } : {} }"
+          @click="setScope('all')"
         >
           All recipes
         </UButton>
         <UButton
           :variant="isFavoritesScope ? 'solid' : 'outline'"
           color="neutral"
-          :to="{ path: '/search', query: { scope: 'favorites', ...(query.trim() ? { q: query.trim() } : {}) } }"
+          @click="setScope('favorites')"
         >
           Favourites
         </UButton>
@@ -75,7 +75,7 @@ const route = useRoute()
 const router = useRouter()
 const { loggedIn } = useUserSession()
 
-const scope = computed(() => String(route.query.scope || 'all'))
+const scope = computed(() => (route.query.scope === 'favorites' ? 'favorites' : 'all'))
 const isFavoritesScope = computed(() => scope.value === 'favorites')
 
 if (isFavoritesScope.value && !loggedIn.value) {
@@ -85,18 +85,37 @@ if (isFavoritesScope.value && !loggedIn.value) {
 const query = ref(String(route.query.q || ''))
 const debouncedQuery = refDebounced(query, 250)
 
-watch([query, scope], () => {
-  const trimmed = query.value.trim()
+function buildSearchQuery(nextScope: 'all' | 'favorites', q: string) {
   const nextQuery: Record<string, string> = {}
-
-  if (isFavoritesScope.value) {
+  if (nextScope === 'favorites') {
     nextQuery.scope = 'favorites'
   }
+  const trimmed = q.trim()
   if (trimmed) {
     nextQuery.q = trimmed
   }
+  return nextQuery
+}
 
-  router.replace({ query: nextQuery })
+function setScope(nextScope: 'all' | 'favorites') {
+  if (nextScope === 'favorites' && !loggedIn.value) {
+    navigateTo(`/login?redirect=${encodeURIComponent('/search?scope=favorites')}`)
+    return
+  }
+  router.replace({ path: '/search', query: buildSearchQuery(nextScope, query.value) })
+}
+
+watch(query, (value) => {
+  const trimmed = value.trim()
+  const nextQuery = buildSearchQuery(scope.value, trimmed)
+  const currentQ = route.query.q ? String(route.query.q) : ''
+  const currentScope = route.query.scope === 'favorites' ? 'favorites' : 'all'
+
+  if (currentQ === (nextQuery.q || '') && currentScope === scope.value) {
+    return
+  }
+
+  router.replace({ path: '/search', query: nextQuery })
 })
 
 watch(() => route.query.q, (value) => {
@@ -107,7 +126,7 @@ watch(() => route.query.q, (value) => {
 })
 
 const { data: results, pending } = await useAsyncData(
-  () => `recipe-search-page-${scope.value}`,
+  () => `recipe-search-${scope.value}-${debouncedQuery.value.trim().toLowerCase()}`,
   () => {
     const q = debouncedQuery.value.trim()
     if (q.length < 2) {
@@ -118,7 +137,7 @@ const { data: results, pending } = await useAsyncData(
       query: {
         q,
         limit: 50,
-        scope: isFavoritesScope.value ? 'favorites' : 'all'
+        scope: scope.value
       }
     })
   },

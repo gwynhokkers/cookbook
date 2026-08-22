@@ -203,6 +203,19 @@
         </UFormField>
 
         <UFormField
+          label="Servings"
+          name="servings"
+          help="How many portions this recipe makes. Used for per-serving nutrition."
+        >
+          <UInput
+            v-model="state.servings"
+            type="number"
+            min="1"
+            placeholder="e.g. 4"
+          />
+        </UFormField>
+
+        <UFormField
           label="Source"
           name="source"
           class="md:col-span-2"
@@ -507,6 +520,10 @@ const schema = z.object({
   tags: z.array(z.string()).default([]),
   source: z.string().max(500),
   visibility: z.enum(['public', 'private']).default('public'),
+  servings: z.preprocess(
+    (val) => (val === '' || val === undefined ? null : val),
+    z.union([z.null(), z.coerce.number().int().positive()])
+  ).optional().nullable(),
   ingredients: z.array(z.object({
     lineText: z.string().optional(),
     amount: z.union([z.string(), z.number()]).transform(val => String(val)),
@@ -547,6 +564,7 @@ type ExtractionApplyMode = 'fill-empty' | 'replace-all'
 interface ExtractedRecipeResponse {
   title?: string
   description?: string
+  servings?: number
   ingredients?: Array<{
     amount?: string
     unit?: string
@@ -617,6 +635,7 @@ const state = reactive({
   tags: props.recipe?.tags || [],
   source: props.recipe?.source || '',
   visibility: (props.recipe?.visibility as 'public' | 'private') || 'public',
+  servings: props.recipe?.servings ?? null,
   ingredients: [] as IngredientRowModel[],
   steps: Array.isArray(props.recipe?.steps)
     ? props.recipe.steps.map((step: { title?: string; content?: string }) => ({
@@ -893,6 +912,12 @@ const mergeExtractedRecipe = (extracted: ExtractedRecipeResponse, mode: Extracti
       }
     }
     state.tags = mergedTags
+  }
+
+  if (extracted.servings !== undefined && extracted.servings > 0) {
+    if (mode === 'replace-all' || state.servings == null) {
+      state.servings = extracted.servings
+    }
   }
 
   const extractedIngredients = toExtractedIngredients(extracted.ingredients)
@@ -1368,6 +1393,7 @@ const onSubmit = async (event: any) => {
     ...formData,
     imageUrl: state.imageUrl,
     visibility: state.visibility,
+    servings: state.servings,
     tags: state.tags,
     ingredients: ingredientsForSubmit,
     steps: stepsForSubmit
