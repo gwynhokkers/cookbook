@@ -39,7 +39,7 @@ async function main() {
   }
 
   let files = (await readdir(args.dir))
-    .filter((n) => n.endsWith('.json') && n !== 'index.json')
+    .filter((n) => n.endsWith('.json') && n !== 'index.json' && n !== 'upload-results.json')
     .sort()
   if (args.limit > 0) files = files.slice(0, args.limit)
 
