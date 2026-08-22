@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { header } = useAppConfig()
+const { open: searchOpen } = useAppSearch()
 </script>
 
 <template>
@@ -16,7 +17,14 @@ const { header } = useAppConfig()
     </template>
 
     <template #default>
-      <UDashboardSearchButton class="hidden sm:flex" />
+      <UButton
+        icon="i-lucide-search"
+        label="Search"
+        variant="outline"
+        color="neutral"
+        class="hidden sm:inline-flex"
+        @click="searchOpen = true"
+      />
     </template>
 
     <template #right>

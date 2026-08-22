@@ -70,6 +70,7 @@
 </template>
 
 <script setup lang="ts">
+import { refDebounced } from '@vueuse/core'
 import type { RecipeSearchResult } from '~~/shared/utils/recipeSearchTypes'
 import { formatSearchMatches } from '~~/shared/utils/recipeSearchTypes'
 

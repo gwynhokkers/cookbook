@@ -32,5 +32,8 @@ logs
 scripts/recipe-import/out/
 scripts/recipe-import/spike-input/
 
+# Local production recipe sync snapshots
+scripts/recipe-sync/out/
+
 # Graphify local knowledge graph (regenerate with `graphify update .`)
 graphify-out/
