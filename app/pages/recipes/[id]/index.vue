@@ -121,7 +121,7 @@
       </div>
 
       <!-- Nutrition Section -->
-      <div class="mt-8 max-w-4xl">
+      <div class="mt-6">
         <RecipeNutrition :recipe-id="recipeId" />
       </div>
 

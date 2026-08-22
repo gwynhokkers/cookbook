@@ -3,7 +3,7 @@
  * Batch-convert cookbook page scans with local Docling OCR.
  *
  * Usage:
- *   node scripts/recipe-import/ocr.mjs --source "/path/to/scans" [--book slug] [--output DIR] [--limit N]
+ *   node scripts/recipe-import/ocr.mjs --source "/path/to/scans" [--book slug] [--output DIR] [--offset N] [--limit N]
  *
  * If --book is set and --output is not, writes to scripts/recipe-import/out/<book>/pages
  */
@@ -17,12 +17,13 @@ const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff'])
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 function parseArgs(argv) {
-  const args = { source: '', book: '', output: '', limit: 0 }
+  const args = { source: '', book: '', output: '', offset: 0, limit: 0 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--source') args.source = argv[++i] || ''
     else if (a === '--book') args.book = String(argv[++i] || '').trim()
     else if (a === '--output') args.output = path.resolve(argv[++i] || '')
+    else if (a === '--offset') args.offset = Number(argv[++i] || 0)
     else if (a === '--limit') args.limit = Number(argv[++i] || 0)
     else if (!a.startsWith('--') && !args.source) args.source = a
   }
@@ -93,7 +94,7 @@ async function writeManifest(sourceDir, outputDir, imageNames) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (!args.source) {
-    console.error('Usage: node scripts/recipe-import/ocr.mjs --source "/path/to/scans" [--book slug] [--output DIR] [--limit N]')
+    console.error('Usage: node scripts/recipe-import/ocr.mjs --source "/path/to/scans" [--book slug] [--output DIR] [--offset N] [--limit N]')
     process.exit(1)
   }
 
@@ -101,19 +102,21 @@ async function main() {
   const outputDir = args.output
   await mkdir(outputDir, { recursive: true })
 
-  let images = await listImages(sourceDir)
+  const allImages = await listImages(sourceDir)
+  let images = allImages
+  if (args.offset > 0) images = images.slice(args.offset)
   if (args.limit > 0) images = images.slice(0, args.limit)
   if (images.length === 0) {
-    console.error(`No images found in ${sourceDir}`)
+    console.error(`No images found in ${sourceDir}${args.offset ? ` (offset ${args.offset})` : ''}`)
     process.exit(1)
   }
 
-  console.log(`Converting ${images.length} image(s) from ${sourceDir}`)
+  console.log(`Converting ${images.length} image(s) from ${sourceDir}${args.offset ? ` (offset ${args.offset})` : ''}`)
   console.log('Docling flags: --from image --to md --ocr --ocr-engine ocrmac --image-export-mode placeholder')
 
   let convertSource = sourceDir
   let tmpDir = ''
-  if (args.limit > 0 && images.length < (await listImages(sourceDir)).length) {
+  if (images.length < allImages.length) {
     tmpDir = path.join(tmpdir(), `recipe-ocr-${Date.now()}`)
     await mkdir(tmpDir, { recursive: true })
     for (const name of images) {

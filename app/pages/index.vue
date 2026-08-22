@@ -31,25 +31,22 @@
             :title="recipe.title"
             :description="recipe.description"
           >
-            <template #header>
-              <div class="relative">
-                <NuxtImg
-                  v-if="recipe?.imageUrl"
-                  class="aspect-square object-cover"
-                  :src="recipe.imageUrl"
-                  :alt="recipe.title"
-                  provider="blob"
-                />
-                <UBadge
-                  v-if="recipe.visibility === 'private'"
-                  color="warning"
-                  class="absolute top-2 right-2"
-                >
-                  <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
-                  Private
-                </UBadge>
-              </div>
+            <template v-if="recipe?.imageUrl" #header>
+              <NuxtImg
+                class="aspect-square object-cover"
+                :src="recipe.imageUrl"
+                :alt="recipe.title"
+                provider="blob"
+              />
             </template>
+            <UBadge
+              v-if="recipe.visibility === 'private'"
+              color="warning"
+              class="absolute top-2 right-2 z-10"
+            >
+              <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
+              Private
+            </UBadge>
           </UPageCard>
         </UPageGrid>
       </UPageSection>
