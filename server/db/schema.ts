@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core'
 
 // Recipe tables
 export const recipes = sqliteTable('recipes', {
@@ -65,3 +65,14 @@ export const recipeIngredients = sqliteTable('recipe_ingredients', {
 
 export type RecipeIngredient = typeof recipeIngredients.$inferSelect
 export type NewRecipeIngredient = typeof recipeIngredients.$inferInsert
+
+export const recipeFavorites = sqliteTable('recipe_favorites', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().defaultNow()
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.recipeId] })
+])
+
+export type RecipeFavorite = typeof recipeFavorites.$inferSelect
+export type NewRecipeFavorite = typeof recipeFavorites.$inferInsert

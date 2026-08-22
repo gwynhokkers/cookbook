@@ -190,6 +190,13 @@ export async function setCachedSearchResults(key: string, value: unknown) {
   await kv.set(key, value, { ttl: 300 })
 }
 
-export function buildSearchCacheKey(version: string, signedIn: boolean, query: string, limit: number) {
-  return `search:v${version}:${signedIn ? 'auth' : 'guest'}:${query.toLowerCase()}:${limit}`
+export function buildSearchCacheKey(
+  version: string,
+  signedIn: boolean,
+  scope: string,
+  favoritesFingerprint: string,
+  query: string,
+  limit: number
+) {
+  return `search:v${version}:${signedIn ? 'auth' : 'guest'}:${scope}:${favoritesFingerprint}:${query.toLowerCase()}:${limit}`
 }

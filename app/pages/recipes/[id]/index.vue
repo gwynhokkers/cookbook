@@ -19,6 +19,11 @@
         {{ recipe?.title }}
       </h1>
       <div class="flex gap-2 items-center">
+        <RecipeFavoriteButton
+          v-if="recipe"
+          :recipe-id="recipe.id"
+          class="shrink-0"
+        />
         <UBadge
           v-if="recipe?.visibility === 'private'"
           color="warning"

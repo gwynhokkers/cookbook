@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db, schema } from '../db'
 import { parseRecipeSource } from '~~/shared/utils/formatRecipeSource'
 import {
@@ -14,6 +14,38 @@ interface SearchOptions {
   query: string
   limit?: number
   signedIn: boolean
+  scope?: 'all' | 'favorites'
+  favoriteRecipeIds?: string[]
+  favoritesFingerprint?: string
+}
+
+const FAVORITE_SEARCH_BOOST = 75
+
+function getRestrictToRecipeIds(options: SearchOptions) {
+  if (options.scope === 'favorites') {
+    return options.favoriteRecipeIds || []
+  }
+  return undefined
+}
+
+function finalizeSearchResults(results: RecipeSearchResult[], options: SearchOptions) {
+  const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
+  let next = results
+
+  if (options.scope === 'favorites') {
+    const favoriteSet = new Set(options.favoriteRecipeIds || [])
+    next = next.filter((result) => favoriteSet.has(result.id))
+  } else if (options.favoriteRecipeIds?.length) {
+    const favoriteSet = new Set(options.favoriteRecipeIds)
+    next = next.map((result) => ({
+      ...result,
+      score: favoriteSet.has(result.id) ? result.score + FAVORITE_SEARCH_BOOST : result.score
+    }))
+  }
+
+  return next
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
 }
 
 function escapeFtsToken(token: string) {
@@ -178,9 +210,18 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
   const ftsQuery = toFtsQuery(options.query)
   if (!ftsQuery) return []
 
+  const restrictToRecipeIds = getRestrictToRecipeIds(options)
+  if (restrictToRecipeIds && restrictToRecipeIds.length === 0) {
+    return []
+  }
+
   const visibilityClause = options.signedIn
     ? sql`1 = 1`
     : sql`r.visibility = 'public'`
+
+  const favoriteFilter = restrictToRecipeIds?.length
+    ? sql`AND recipes_fts.recipe_id IN (${sql.join(restrictToRecipeIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``
 
   const rows = await db.all(sql`
     SELECT
@@ -196,8 +237,9 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
     JOIN recipes r ON recipes_fts.recipe_id = r.id
     WHERE recipes_fts MATCH ${ftsQuery}
       AND ${visibilityClause}
+      ${favoriteFilter}
     ORDER BY rank
-    LIMIT ${limit}
+    LIMIT ${Math.max(limit, 50)}
   `) as Array<{
     id: string
     title: string
@@ -281,7 +323,10 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
     })
   }
 
-  return results.sort((a, b) => b.score - a.score)
+  return finalizeSearchResults(
+    results.sort((a, b) => b.score - a.score),
+    options
+  )
 }
 
 async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchResult[]> {
@@ -289,9 +334,23 @@ async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchR
   const terms = options.query.toLowerCase().split(/\s+/).filter(Boolean)
   if (!terms.length) return []
 
-  const recipeQuery = options.signedIn
-    ? db.select().from(schema.recipes)
-    : db.select().from(schema.recipes).where(eq(schema.recipes.visibility, 'public'))
+  const restrictToRecipeIds = getRestrictToRecipeIds(options)
+  if (restrictToRecipeIds && restrictToRecipeIds.length === 0) {
+    return []
+  }
+
+  const conditions = []
+  if (!options.signedIn) {
+    conditions.push(eq(schema.recipes.visibility, 'public'))
+  }
+  if (restrictToRecipeIds?.length) {
+    conditions.push(inArray(schema.recipes.id, restrictToRecipeIds))
+  }
+
+  let recipeQuery = db.select().from(schema.recipes)
+  if (conditions.length) {
+    recipeQuery = recipeQuery.where(and(...conditions))
+  }
 
   const recipes = await recipeQuery
   const ingredientsByRecipe = await loadIngredientNamesByRecipe(recipes.map((recipe) => recipe.id))
@@ -342,9 +401,7 @@ async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchR
     })
   }
 
-  return results
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
+  return finalizeSearchResults(results, options)
 }
 
 export async function searchRecipes(options: SearchOptions): Promise<RecipeSearchResult[]> {
@@ -352,8 +409,17 @@ export async function searchRecipes(options: SearchOptions): Promise<RecipeSearc
   if (trimmed.length < 2) return []
 
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
+  const scope = options.scope || 'all'
+  const favoritesFingerprint = options.favoritesFingerprint || 'none'
   const cacheVersion = await getSearchCacheVersion()
-  const cacheKey = buildSearchCacheKey(cacheVersion, options.signedIn, trimmed, limit)
+  const cacheKey = buildSearchCacheKey(
+    cacheVersion,
+    options.signedIn,
+    scope,
+    favoritesFingerprint,
+    trimmed,
+    limit
+  )
   const cached = await getCachedSearchResults<RecipeSearchResult[]>(cacheKey)
   if (cached) return cached
 
