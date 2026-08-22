@@ -1,74 +1,74 @@
 <script setup lang="ts">
-import {
-  getToolName,
-  isTextUIPart,
-  isToolUIPart,
-  type UIMessage
-} from 'ai'
-import { isPartStreaming, isToolStreaming } from '@nuxt/ui/utils/ai'
-import shiki from '@comark/nuxt/plugins/shiki'
-import type { HumphryRecipeSummary } from '~~/shared/utils/humphryTypes'
+import { getToolName, isTextUIPart, isToolUIPart, type UIMessage } from "ai";
+import { isPartStreaming, isToolStreaming } from "@nuxt/ui/utils/ai";
+import shiki from "@comark/nuxt/plugins/shiki";
+import type { HumphryRecipeSummary } from "~~/shared/utils/humphryTypes";
 
 const props = defineProps<{
-  compact?: boolean
-}>()
+  compact?: boolean;
+}>();
 
-const input = ref('')
-const { messages, status, error, sendMessage, regenerate, stop } = useHumphryChat()
+const input = ref("");
+const { messages, status, error, sendMessage, regenerate, stop } =
+  useHumphryChat();
 
 function onSubmit() {
-  const text = input.value.trim()
+  const text = input.value.trim();
   if (!text) {
-    return
+    return;
   }
 
-  sendMessage({ text })
-  input.value = ''
+  sendMessage({ text });
+  input.value = "";
 }
 
 function extractRecipesFromMessage(message: UIMessage): HumphryRecipeSummary[] {
-  const recipes: HumphryRecipeSummary[] = []
-  const seen = new Set<string>()
+  const recipes: HumphryRecipeSummary[] = [];
+  const seen = new Set<string>();
 
   for (const part of message.parts) {
-    if (!isToolUIPart(part) || part.state !== 'output-available') {
-      continue
+    if (!isToolUIPart(part) || part.state !== "output-available") {
+      continue;
     }
 
-    const toolName = getToolName(part)
-    if (!['search_recipes', 'list_favorites', 'get_recipe_details'].includes(toolName)) {
-      continue
+    const toolName = getToolName(part);
+    if (
+      !["search_recipes", "list_favorites", "get_recipe_details"].includes(
+        toolName,
+      )
+    ) {
+      continue;
     }
 
-    const output = part.output as Record<string, unknown> | undefined
+    const output = part.output as Record<string, unknown> | undefined;
     if (!output) {
-      continue
+      continue;
     }
 
     const list = Array.isArray(output.recipes)
-      ? output.recipes as HumphryRecipeSummary[]
+      ? (output.recipes as HumphryRecipeSummary[])
       : output.id
         ? [output as unknown as HumphryRecipeSummary]
-        : []
+        : [];
 
     for (const recipe of list) {
       if (recipe?.id && !seen.has(recipe.id)) {
-        seen.add(recipe.id)
+        seen.add(recipe.id);
         recipes.push({
           id: recipe.id,
           title: recipe.title,
           description: recipe.description ?? null,
           imageUrl: recipe.imageUrl ?? null,
-          tags: recipe.tags || []
-        })
+          tags: recipe.tags || [],
+        });
       }
     }
   }
 
-  return recipes
+  return recipes;
 }
 
-const markdownClass = '*:first:mt-0 *:last:mb-0'
+const markdownClass = "*:first:mt-0 *:last:mb-0";
 </script>
 
 <template>
@@ -78,7 +78,11 @@ const markdownClass = '*:first:mt-0 *:last:mb-0'
       :status="status"
       :should-auto-scroll="true"
       :compact="compact"
-      :assistant="{ icon: 'i-lucide-chef-hat', label: 'Humphry', variant: 'naked' }"
+      :assistant="{
+        icon: 'i-lucide-chef-hat',
+        label: 'Humphry',
+        variant: 'naked',
+      }"
       :user="{ side: 'right', variant: 'soft' }"
       class="min-h-0 flex-1"
     >

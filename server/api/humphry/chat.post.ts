@@ -1,15 +1,7 @@
-import {
-  convertToModelMessages,
-  createUIMessageStreamResponse,
-  isStepCount,
-  streamText,
-  toUIMessageStream
-} from 'ai'
+import type { UIMessage } from 'ai'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
-import { createHumphryTools } from '../../utils/humphryTools'
-import { HUMPHRY_SYSTEM_PROMPT } from '../../utils/humphryPrompt'
-import { getWorkersAiModel } from '../../utils/workersAiModel'
+import { createHumphryChatResponse } from '../../utils/humphryChatRunner'
 
 const chatBodySchema = z.object({
   messages: z.array(z.object({
@@ -44,23 +36,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const config = useRuntimeConfig(event)
-  const model = getWorkersAiModel(event, String(config.humphryModel))
-  const maxSteps = Number(config.humphryMaxToolSteps || 5)
-  const tools = createHumphryTools(event, userId)
-
   try {
-    const result = streamText({
-      model,
-      system: HUMPHRY_SYSTEM_PROMPT,
-      messages: await convertToModelMessages(parsed.data.messages as Parameters<typeof convertToModelMessages>[0]),
-      tools,
-      stopWhen: isStepCount(maxSteps),
-      maxOutputTokens: 4096
-    })
-
-    const stream = toUIMessageStream({ stream: result.stream })
-    return createUIMessageStreamResponse({ stream })
+    return await createHumphryChatResponse(
+      event,
+      parsed.data.messages as UIMessage[],
+      userId
+    )
   } catch (error) {
     if (error && typeof error === 'object' && 'statusCode' in error) {
       throw error
