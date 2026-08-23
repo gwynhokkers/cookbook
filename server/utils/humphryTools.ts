@@ -7,7 +7,6 @@ import { viewRecipe } from '~~/shared/utils/abilities'
 import { getFavoriteRecipeIds } from './recipeFavorites'
 import { searchRecipes } from './recipeSearch'
 import type { HumphryRecipeSummary } from '~~/shared/utils/humphryTypes'
-import { humphryDebugLog } from './humphryDebugLog'
 
 const recipeSummaryFields = {
   id: schema.recipes.id,
@@ -82,58 +81,23 @@ export function createHumphryTools(event: H3Event, userId: string) {
         limit: z.coerce.number().int().min(1).max(15).optional().describe('Maximum number of results (default 8)')
       }),
       execute: async ({ query, limit }) => {
-        // #region agent log
-        humphryDebugLog({
-          hypothesisId: 'C',
-          location: 'humphryTools.ts:search_recipes',
-          message: 'search_recipes execute start',
-          data: { query, limit: limit ?? 8 }
+        const favoriteRecipeIds = await getFavoriteRecipeIds(userId)
+        const results = await searchRecipes({
+          query,
+          limit: limit ?? 8,
+          signedIn: true,
+          favoriteRecipeIds
         })
-        // #endregion
 
-        try {
-          const favoriteRecipeIds = await getFavoriteRecipeIds(userId)
-          const results = await searchRecipes({
-            query,
-            limit: limit ?? 8,
-            signedIn: true,
-            favoriteRecipeIds
-          })
-
-          const payload = {
-            recipes: results.map((result) => ({
-              id: result.id,
-              title: result.title,
-              description: result.description,
-              imageUrl: result.imageUrl,
-              tags: result.tags,
-              matchedOn: result.matchedOn
-            }))
-          }
-
-          // #region agent log
-          humphryDebugLog({
-            hypothesisId: 'C',
-            location: 'humphryTools.ts:search_recipes',
-            message: 'search_recipes execute done',
-            data: { query, resultCount: payload.recipes.length }
-          })
-          // #endregion
-
-          return payload
-        } catch (error) {
-          // #region agent log
-          humphryDebugLog({
-            hypothesisId: 'I',
-            location: 'humphryTools.ts:search_recipes',
-            message: 'search_recipes execute threw',
-            data: {
-              query,
-              errorMessage: error instanceof Error ? error.message : String(error)
-            }
-          })
-          // #endregion
-          throw error
+        return {
+          recipes: results.map((result) => ({
+            id: result.id,
+            title: result.title,
+            description: result.description,
+            imageUrl: result.imageUrl,
+            tags: result.tags,
+            matchedOn: result.matchedOn
+          }))
         }
       }
     }),

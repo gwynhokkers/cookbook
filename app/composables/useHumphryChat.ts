@@ -30,53 +30,10 @@ function loadStoredMessages(): UIMessage[] {
   }
 }
 
-function summarizeClientToolStates(messages: UIMessage[]) {
-  const toolParts = messages.flatMap((message) =>
-    (message.parts ?? [])
-      .filter((part) => typeof part.type === 'string' && part.type.startsWith('tool-'))
-      .map((part) => ({
-        messageId: message.id,
-        role: message.role,
-        type: part.type,
-        state: 'state' in part ? String(part.state) : undefined,
-        toolCallId: 'toolCallId' in part ? String(part.toolCallId) : undefined
-      }))
-  )
-
-  return {
-    messageCount: messages.length,
-    toolPartCount: toolParts.length,
-    unresolvedCount: toolParts.filter((part) =>
-      part.state === 'input-available' || part.state === 'input-streaming'
-    ).length,
-    toolParts
-  }
-}
-
 function persistMessages(messages: UIMessage[]) {
   if (!import.meta.client) {
     return
   }
-
-  // #region agent log
-  if (import.meta.dev) {
-    fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Debug-Session-Id': '4744c8'
-      },
-      body: JSON.stringify({
-        sessionId: '4744c8',
-        hypothesisId: 'D',
-        location: 'useHumphryChat.ts:persistMessages',
-        message: 'persisting messages',
-        data: summarizeClientToolStates(messages),
-        timestamp: Date.now()
-      })
-    }).catch(() => {})
-  }
-  // #endregion
 
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages))

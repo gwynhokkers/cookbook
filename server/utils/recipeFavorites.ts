@@ -17,11 +17,17 @@ const recipeSummaryFields = {
 }
 
 export async function getFavoriteRecipeIds(userId: string) {
-  const rows = await db.select({ recipeId: schema.recipeFavorites.recipeId })
-    .from(schema.recipeFavorites)
-    .where(eq(schema.recipeFavorites.userId, userId))
+  try {
+    const rows = await db.select({ recipeId: schema.recipeFavorites.recipeId })
+      .from(schema.recipeFavorites)
+      .where(eq(schema.recipeFavorites.userId, userId))
 
-  return rows.map((row) => row.recipeId)
+    return rows.map((row) => row.recipeId)
+  } catch {
+    // Production can hit this when migration 0003_recipe_favorites has not been applied.
+    // Favourites are a search boost only — never fail the whole request/tool on this.
+    return []
+  }
 }
 
 export async function getFavoriteRecipesForUser(

@@ -13,6 +13,11 @@ export default defineNuxtConfig({
     "@pinia/nuxt",
   ],
 
+  // Enable Nuxt UI content components (e.g. UContentToc) without @nuxt/content
+  ui: {
+    content: true,
+  },
+
   hub: {
     db: "sqlite",
     kv: true,

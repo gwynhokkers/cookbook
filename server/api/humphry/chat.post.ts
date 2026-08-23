@@ -2,7 +2,6 @@ import type { UIMessage } from 'ai'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
 import { createHumphryChatResponse } from '../../utils/humphryChatRunner'
-import { humphryDebugLog, summarizeHumphryToolStates } from '../../utils/humphryDebugLog'
 
 const chatBodySchema = z.object({
   messages: z.array(z.object({
@@ -38,20 +37,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const uiMessages = parsed.data.messages as UIMessage[]
-  const toolSummary = summarizeHumphryToolStates(uiMessages)
-
-  // #region agent log
-  humphryDebugLog({
-    hypothesisId: 'A',
-    location: 'chat.post.ts:handler',
-    message: 'incoming chat request',
-    data: {
-      userId,
-      ...toolSummary,
-      usesBinding: !!event.context?.cloudflare?.env?.AI
-    }
-  })
-  // #endregion
 
   try {
     return await createHumphryChatResponse(
@@ -65,19 +50,6 @@ export default defineEventHandler(async (event) => {
     }
 
     const message = error instanceof Error ? error.message : 'Humphry failed to respond'
-
-    // #region agent log
-    humphryDebugLog({
-      hypothesisId: 'G',
-      location: 'chat.post.ts:catch',
-      message: 'chat handler error',
-      data: {
-        errorMessage: message,
-        unresolvedCount: toolSummary.unresolvedCount,
-        toolPartCount: toolSummary.toolPartCount
-      }
-    })
-    // #endregion
 
     if (/reading 'choices'|empty response/i.test(message)) {
       throw createError({

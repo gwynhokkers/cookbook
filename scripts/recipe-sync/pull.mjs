@@ -3,10 +3,9 @@
  * Export recipe bundles from remote Cloudflare D1 via wrangler.
  *
  * Usage:
- *   node scripts/recipe-sync/pull.mjs \
- *     --source "Book Title — Author" \
- *     --visibility all \
- *     --slug my-book
+ *   node scripts/recipe-sync/pull.mjs --visibility all --limit 20
+ *   node scripts/recipe-sync/pull.mjs --source "Book Title — Author" --visibility all
+ *   node scripts/recipe-sync/pull.mjs --visibility all --limit 20 --offset 20 --slug recipes-p2
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -19,21 +18,24 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, '..', '..')
 const DEFAULT_BASE = 'https://cookbook.megwyn.co.uk'
 const DEFAULT_ENV = 'production'
-const CHUNK_SIZE = 80
+const DEFAULT_LIMIT = 20
+const CHUNK_SIZE = 40
 
 function parseArgs(argv) {
   const args = {
     source: '',
     tag: '',
     visibility: '',
-    limit: 0,
+    limit: null,
+    offset: 0,
     ids: [],
     slug: '',
     outDir: '',
     baseUrl: DEFAULT_BASE,
     env: DEFAULT_ENV,
     databaseId: '',
-    dryRun: false
+    dryRun: false,
+    all: false
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -42,6 +44,8 @@ function parseArgs(argv) {
     else if (a === '--tag') args.tag = String(argv[++i] || '').trim()
     else if (a === '--visibility') args.visibility = String(argv[++i] || '').trim().toLowerCase()
     else if (a === '--limit') args.limit = Number(argv[++i] || 0)
+    else if (a === '--offset') args.offset = Number(argv[++i] || 0)
+    else if (a === '--all') args.all = true
     else if (a === '--ids') {
       args.ids = String(argv[++i] || '')
         .split(',')
@@ -64,8 +68,22 @@ function parseArgs(argv) {
     throw new Error('--visibility must be public, private, or all')
   }
 
+  // Default to a small batch so full-table pulls do not time out / overflow wrangler JSON.
+  if (args.all) {
+    args.limit = 0
+  } else if (args.limit == null || Number.isNaN(args.limit)) {
+    args.limit = DEFAULT_LIMIT
+  } else if (args.limit < 0) {
+    throw new Error('--limit must be >= 0 (use --all for no limit)')
+  }
+
+  if (args.offset < 0 || Number.isNaN(args.offset)) {
+    throw new Error('--offset must be >= 0')
+  }
+
   if (!args.slug) {
-    args.slug = slugify(args.source || args.tag || 'recipes')
+    const base = slugify(args.source || args.tag || 'recipes')
+    args.slug = args.offset > 0 ? `${base}-offset-${args.offset}` : base
   }
 
   if (!args.outDir) {
@@ -103,20 +121,17 @@ function readDatabaseId(envName) {
   return db.database_id
 }
 
-function wranglerCommand() {
+function wranglerBin() {
   const local = path.join(ROOT, 'node_modules', '.bin', 'wrangler')
-  if (existsSync(local)) return local
-  return 'npx'
+  if (existsSync(local)) return { cmd: local, prefix: [] }
+  return { cmd: 'npx', prefix: ['--yes', 'wrangler'] }
 }
 
 function wranglerArgs(args, command) {
-  const cmd = wranglerCommand()
-  const base = cmd.endsWith('wrangler')
-    ? [cmd]
-    : [cmd, 'wrangler']
-
+  const { cmd, prefix } = wranglerBin()
   return [
-    ...base,
+    cmd,
+    ...prefix,
     'd1',
     'execute',
     'DB',
@@ -129,55 +144,77 @@ function wranglerArgs(args, command) {
   ]
 }
 
+/**
+ * Wrangler `--json` returns: [{ results: [...rows], success, meta }]
+ * Older/nested shapes may wrap again; accept both.
+ */
 function parseWranglerJson(stdout) {
   const trimmed = String(stdout || '').trim()
   if (!trimmed) return []
 
+  // npx may occasionally leak non-JSON lines; keep from first `[` or `{`
+  const start = Math.min(
+    ...['[', '{']
+      .map((ch) => {
+        const idx = trimmed.indexOf(ch)
+        return idx === -1 ? Number.POSITIVE_INFINITY : idx
+      })
+  )
+  if (!Number.isFinite(start)) {
+    throw new Error(`Could not parse wrangler JSON output:\n${trimmed.slice(0, 500)}`)
+  }
+
   let parsed
   try {
-    parsed = JSON.parse(trimmed)
+    parsed = JSON.parse(trimmed.slice(start))
   } catch {
     throw new Error(`Could not parse wrangler JSON output:\n${trimmed.slice(0, 500)}`)
   }
 
   const rows = []
+  const seen = new Set()
+
+  const pushRows = (candidate) => {
+    if (!Array.isArray(candidate)) return
+    for (const row of candidate) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+      // Skip wrangler envelope objects
+      if ('success' in row && 'meta' in row) continue
+      if ('results' in row && 'success' in row) continue
+      const key = JSON.stringify(row)
+      if (seen.has(key)) continue
+      seen.add(key)
+      rows.push(row)
+    }
+  }
+
   const walk = (node) => {
     if (!node) return
     if (Array.isArray(node)) {
-      for (const item of node) walk(item)
+      // Top-level array of envelopes, or a bare row array
+      const first = node[0]
+      if (first && typeof first === 'object' && Array.isArray(first.results)) {
+        for (const item of node) walk(item)
+        return
+      }
+      pushRows(node)
       return
     }
     if (typeof node !== 'object') return
 
     if (Array.isArray(node.results)) {
-      for (const result of node.results) {
-        if (result && typeof result === 'object') {
-          if (Array.isArray(result.results)) {
-            rows.push(...result.results)
-          }
-          walk(result.results)
-        }
+      const first = node.results[0]
+      const nestedEnvelope = first && typeof first === 'object' && Array.isArray(first.results)
+      if (nestedEnvelope) {
+        for (const item of node.results) walk(item)
+      } else {
+        pushRows(node.results)
       }
-    }
-
-    for (const value of Object.values(node)) {
-      if (value && typeof value === 'object') walk(value)
     }
   }
 
   walk(parsed)
-
-  const deduped = []
-  const seen = new Set()
-  for (const row of rows) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
-    const key = JSON.stringify(row)
-    if (seen.has(key)) continue
-    seen.add(key)
-    deduped.push(row)
-  }
-
-  return deduped
+  return rows
 }
 
 function executeQuery(args, command) {
@@ -187,7 +224,8 @@ function executeQuery(args, command) {
   const result = spawnSync(cmd, rest, {
     cwd: ROOT,
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 32 * 1024 * 1024
   })
 
   if (result.error) {
@@ -195,8 +233,16 @@ function executeQuery(args, command) {
   }
 
   if (result.status !== 0) {
+    const detail = [result.stderr, result.stdout]
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .join('\n---\n')
     throw new Error(
-      `wrangler d1 execute failed (exit ${result.status}):\n${result.stderr || result.stdout}`
+      `wrangler d1 execute failed (exit ${result.status}).`
+      + (args.limit === 0
+        ? ' Try a smaller batch: --limit 20 (default) or --limit 20 --offset 20.'
+        : ` Try lowering --limit (currently ${args.limit}).`)
+      + `\n${detail || '(no wrangler output)'}`
     )
   }
 
@@ -234,6 +280,7 @@ SELECT
   date,
   tags,
   source,
+  servings,
   steps,
   visibility,
   author_id,
@@ -246,6 +293,11 @@ ORDER BY date DESC
 
   if (args.limit > 0) {
     sql += `\nLIMIT ${Math.floor(args.limit)}`
+    if (args.offset > 0) {
+      sql += `\nOFFSET ${Math.floor(args.offset)}`
+    }
+  } else if (args.offset > 0) {
+    throw new Error('--offset requires --limit (or omit --all)')
   }
 
   return sql
@@ -312,6 +364,7 @@ function mapRecipe(row, baseUrl) {
     date: row.date,
     tags: row.tags ?? '[]',
     source: row.source ?? null,
+    servings: row.servings ?? null,
     steps: row.steps ?? '[]',
     visibility: row.visibility ?? 'public',
     authorId: null,
@@ -350,7 +403,10 @@ async function main() {
   const databaseId = args.databaseId || readDatabaseId(args.env)
 
   const recipesQuery = buildRecipesQuery(args)
-  console.log(`Querying remote D1 (${args.env}) for recipes...`)
+  const limitLabel = args.limit > 0
+    ? `limit=${args.limit} offset=${args.offset}`
+    : 'limit=none (--all)'
+  console.log(`Querying remote D1 (${args.env}) for recipes (${limitLabel})...`)
   if (args.dryRun) {
     console.log(recipesQuery)
   }
@@ -361,17 +417,17 @@ async function main() {
   let recipeIngredientRows = []
   if (recipeIds.length > 0) {
     for (const ids of chunk(recipeIds, CHUNK_SIZE)) {
-      const query = buildRecipeIngredientsQuery(ids)
-      recipeIngredientRows.push(...executeQuery(args, query))
+      recipeIngredientRows.push(...executeQuery(args, buildRecipeIngredientsQuery(ids)))
     }
   }
 
-  const ingredientIds = [...new Set(recipeIngredientRows.map((row) => row.ingredient_id).filter(Boolean))]
+  const ingredientIds = [...new Set(
+    recipeIngredientRows.map((row) => row.ingredient_id).filter(Boolean)
+  )]
   let ingredientRows = []
   if (ingredientIds.length > 0) {
     for (const ids of chunk(ingredientIds, CHUNK_SIZE)) {
-      const query = buildIngredientsQuery(ids)
-      ingredientRows.push(...executeQuery(args, query))
+      ingredientRows.push(...executeQuery(args, buildIngredientsQuery(ids)))
     }
   }
 
@@ -386,6 +442,7 @@ async function main() {
         tag: args.tag || null,
         visibility: args.visibility,
         limit: args.limit || null,
+        offset: args.offset || 0,
         ids: args.ids
       }
     },
@@ -397,6 +454,15 @@ async function main() {
   console.log(
     `Found ${snapshot.recipes.length} recipe(s), ${snapshot.recipeIngredients.length} recipe ingredient(s), ${snapshot.ingredients.length} ingredient(s).`
   )
+
+  if (args.limit > 0 && snapshot.recipes.length === args.limit) {
+    const nextOffset = args.offset + args.limit
+    console.log(
+      `Batch full. Next batch: bun run sync:pull -- --visibility ${args.visibility}`
+      + (args.source ? ` --source ${JSON.stringify(args.source)}` : '')
+      + ` --limit ${args.limit} --offset ${nextOffset}`
+    )
+  }
 
   if (args.dryRun) {
     console.log('Dry run — snapshot not written.')

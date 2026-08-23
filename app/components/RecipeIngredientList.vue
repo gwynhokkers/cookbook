@@ -1,6 +1,6 @@
 <template>
   <div id="ingredients" class="py-4">
-    <h2 class="text-3xl mb-2">Ingredients</h2>
+    <h2 class="text-3xl mb-2 font-serif">Ingredients</h2>
     <div class="columns-xs gap-8">
       <slot />
     </div>

@@ -10,36 +10,7 @@ import {
 import type { H3Event } from 'h3'
 import { HUMPHRY_SYSTEM_PROMPT } from './humphryPrompt'
 import { createHumphryTools } from './humphryTools'
-import { humphryDebugLog, summarizeHumphryToolStates } from './humphryDebugLog'
 import { getWorkersAiModel } from './workersAiModel'
-
-function summarizeStepToolParts(step: {
-  content: Array<{ type: string, toolCallId?: string, error?: unknown, output?: unknown, invalid?: boolean }>
-  toolCalls: Array<{ toolCallId: string, toolName: string, input: unknown, invalid?: boolean }>
-  toolResults: Array<{ toolCallId: string, output?: unknown }>
-}) {
-  const toolErrors = step.content
-    .filter((part) => part.type === 'tool-error')
-    .map((part) => ({
-      toolCallId: part.toolCallId,
-      error: part.error instanceof Error
-        ? part.error.message
-        : typeof part.error === 'string'
-          ? part.error
-          : JSON.stringify(part.error)
-    }))
-
-  return {
-    contentTypes: step.content.map((part) => part.type),
-    toolCallCount: step.toolCalls.length,
-    toolResultCount: step.toolResults.length,
-    toolErrorCount: toolErrors.length,
-    invalidToolCallIds: step.toolCalls
-      .filter((call) => call.invalid)
-      .map((call) => call.toolCallId),
-    toolErrors
-  }
-}
 
 function findToolOutcome(
   step: {
@@ -83,20 +54,6 @@ export async function createHumphryChatResponse(
   const model = getWorkersAiModel(event, String(config.humphryModel))
   const maxSteps = Number(config.humphryMaxToolSteps || 8)
   const tools = createHumphryTools(event, userId)
-  const incomingToolSummary = summarizeHumphryToolStates(uiMessages)
-
-  // #region agent log
-  humphryDebugLog({
-    hypothesisId: 'A',
-    location: 'humphryChatRunner.ts:beforeGenerate',
-    message: 'before generateText',
-    data: {
-      maxSteps,
-      usesBinding: !!event.context?.cloudflare?.env?.AI,
-      ...incomingToolSummary
-    }
-  })
-  // #endregion
 
   const result = await generateText({
     model,
@@ -107,50 +64,8 @@ export async function createHumphryChatResponse(
     }),
     tools,
     stopWhen: isStepCount(maxSteps),
-    maxOutputTokens: 4096,
-    onStepFinish: (step) => {
-      // #region agent log
-      humphryDebugLog({
-        hypothesisId: 'I',
-        location: 'humphryChatRunner.ts:onStepFinish',
-        message: 'step finished',
-        data: {
-          stepNumber: step.stepNumber,
-          finishReason: step.finishReason,
-          textLength: step.text.length,
-          toolCalls: step.toolCalls.map((call) => ({
-            toolName: call.toolName,
-            toolCallId: call.toolCallId,
-            invalid: 'invalid' in call ? Boolean(call.invalid) : false,
-            input: call.input
-          })),
-          ...summarizeStepToolParts(step)
-        }
-      })
-      // #endregion
-    }
+    maxOutputTokens: 4096
   })
-
-  const stepSummary = result.steps.map((step) => ({
-    stepNumber: step.stepNumber,
-    finishReason: step.finishReason,
-    textLength: step.text.length,
-    ...summarizeStepToolParts(step)
-  }))
-
-  // #region agent log
-  humphryDebugLog({
-    hypothesisId: 'B',
-    location: 'humphryChatRunner.ts:afterGenerate',
-    message: 'generateText finished',
-    data: {
-      finishReason: result.finishReason,
-      textLength: result.text.length,
-      stepCount: result.steps.length,
-      steps: stepSummary
-    }
-  })
-  // #endregion
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
@@ -178,37 +93,12 @@ export async function createHumphryChatResponse(
                 output: outcome.output
               })
             } else if (outcome.kind === 'error') {
-              // #region agent log
-              humphryDebugLog({
-                hypothesisId: 'I',
-                location: 'humphryChatRunner.ts:replayToolError',
-                message: 'replaying tool-error',
-                data: {
-                  toolCallId: toolCall.toolCallId,
-                  toolName: toolCall.toolName,
-                  errorText: outcome.errorText
-                }
-              })
-              // #endregion
-
               writer.write({
                 type: 'tool-output-error',
                 toolCallId: toolCall.toolCallId,
                 errorText: outcome.errorText
               })
             } else {
-              // #region agent log
-              humphryDebugLog({
-                hypothesisId: 'B',
-                location: 'humphryChatRunner.ts:replayMissingOutput',
-                message: 'tool call missing result during replay',
-                data: {
-                  toolCallId: toolCall.toolCallId,
-                  toolName: toolCall.toolName
-                }
-              })
-              // #endregion
-
               writer.write({
                 type: 'tool-output-error',
                 toolCallId: toolCall.toolCallId,

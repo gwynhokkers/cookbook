@@ -123,17 +123,38 @@ export async function deleteRecipeSearchIndex(recipeId: string) {
   await invalidateSearchCache()
 }
 
-export async function rebuildRecipeSearchIndex() {
+export async function rebuildRecipeSearchIndex(options?: {
+  offset?: number
+  limit?: number
+}) {
+  // #region agent log
+  const _dbgStartedAt = Date.now()
+  // #endregion
+
   if (!(await checkFtsAvailable())) {
-    return { indexed: 0, ftsAvailable: false }
+    return { indexed: 0, ftsAvailable: false, done: true, offset: 0, total: 0 }
   }
 
-  await db.run(sql`DELETE FROM recipes_fts`)
+  const offset = Math.max(0, options?.offset ?? 0)
+  const limit = options?.limit != null
+    ? Math.min(Math.max(options.limit, 1), 100)
+    : undefined
+
+  // Full rebuild clears the index once at the start.
+  if (offset === 0) {
+    await db.run(sql`DELETE FROM recipes_fts`)
+  }
 
   const recipes = await db.select({ id: schema.recipes.id }).from(schema.recipes)
+  const total = recipes.length
+  const slice = limit == null ? recipes.slice(offset) : recipes.slice(offset, offset + limit)
   let indexed = 0
 
-  for (const recipe of recipes) {
+  // #region agent log
+  fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4744c8'},body:JSON.stringify({sessionId:'4744c8',runId:'reindex-524',hypothesisId:'A',location:'recipeSearchIndex.ts:rebuild:start',message:'reindex batch start',data:{offset,limit:limit??null,total,sliceLen:slice.length,fullRebuild:limit==null},timestamp:Date.now()})}).catch(()=>{})
+  // #endregion
+
+  for (const recipe of slice) {
     const doc = await buildRecipeSearchDocument(recipe.id)
     if (doc) {
       await upsertFtsDocument(doc)
@@ -141,8 +162,28 @@ export async function rebuildRecipeSearchIndex() {
     }
   }
 
-  await invalidateSearchCache()
-  return { indexed, ftsAvailable: true }
+  const nextOffset = offset + slice.length
+  const done = nextOffset >= total
+
+  if (done) {
+    await invalidateSearchCache()
+  }
+
+  const durationMs = Date.now() - _dbgStartedAt
+  // #region agent log
+  fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4744c8'},body:JSON.stringify({sessionId:'4744c8',runId:'reindex-524',hypothesisId:'C',location:'recipeSearchIndex.ts:rebuild:end',message:'reindex batch end',data:{offset,limit:limit??null,indexed,total,nextOffset,done,durationMs,msPerRecipe:indexed?Math.round(durationMs/indexed):null,wouldExceedCfTimeout:durationMs>=100000},timestamp:Date.now()})}).catch(()=>{})
+  // #endregion
+
+  return {
+    indexed,
+    ftsAvailable: true,
+    offset,
+    nextOffset,
+    total,
+    done,
+    // Help operators see wall time without Cloudflare logs.
+    durationMs
+  }
 }
 
 export async function isRecipeFtsAvailable() {

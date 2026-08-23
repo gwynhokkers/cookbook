@@ -424,9 +424,21 @@ export async function searchRecipes(options: SearchOptions): Promise<RecipeSearc
   if (cached) return cached
 
   const ftsAvailable = await isRecipeFtsAvailable()
-  const results = ftsAvailable
-    ? await searchWithFts({ ...options, limit })
-    : await searchWithFallback({ ...options, limit })
+  let results: RecipeSearchResult[] = []
+
+  if (ftsAvailable) {
+    try {
+      results = await searchWithFts({ ...options, limit })
+    } catch {
+      results = []
+    }
+  }
+
+  // FTS can exist but be empty/unindexed after migration, or throw on MATCH.
+  // Fall back to LIKE search so site search / Humphry still return recipes.
+  if (!ftsAvailable || results.length === 0) {
+    results = await searchWithFallback({ ...options, limit })
+  }
 
   if (results.length > 0) {
     await setCachedSearchResults(cacheKey, results)

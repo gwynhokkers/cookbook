@@ -1,9 +1,8 @@
 <template>
-  <div :id="titleId" class="">
+  <div :id="titleId">
     <h3 class="text-xl text-pretty mb-2">{{ index }}. {{ title }}</h3>
-    <div class="prose max-w-none">
-      <p v-html="parsedContent" />
-    </div>
+    <!-- Use a div: marked wraps blocks in <p>, and nested <p> breaks hydration -->
+    <div class="prose max-w-none" v-html="parsedContent" />
   </div>
 </template>
 
@@ -16,10 +15,12 @@ const props = defineProps({
   content: String,
 });
 
-const titleId = computed(() => props.title.toLowerCase().replace(/\s/g, "-"));
+const titleId = computed(() =>
+  (props.title || "").toLowerCase().replace(/\s/g, "-"),
+);
 
 const parsedContent = computed(() => {
-  // return content - from markdown to html
-  return marked(props.content);
+  if (!props.content) return "";
+  return marked.parse(props.content, { async: false }) as string;
 });
 </script>

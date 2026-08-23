@@ -1,5 +1,7 @@
 <template>
-  <UPage class="container mx-auto flex flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-8">
+  <UPage
+    class="container mx-auto flex flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-8"
+  >
     <template #left>
       <UPageAside class="hidden lg:block">
         <div class="">
@@ -12,8 +14,10 @@
           />
         </div>
         <nav v-if="navigation.length" class="mt-6">
-          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-            Recipes
+          <p
+            class="mb-2 text-xs font-medium uppercase tracking-wide text-muted"
+          >
+            Similar recipes
           </p>
           <ul class="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
             <li v-for="item in navigation" :key="item.to">
@@ -30,11 +34,15 @@
       </UPageAside>
     </template>
     <header class="space-y-4">
-      <h1 class="font-serif text-3xl leading-tight text-pretty sm:text-4xl lg:text-5xl">
+      <h1
+        class="font-serif text-3xl leading-tight text-pretty sm:text-4xl lg:text-5xl"
+      >
         {{ recipe?.title }}
       </h1>
 
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      >
         <div class="flex flex-wrap items-center gap-2">
           <RecipeFavoriteButton
             v-if="recipe"
@@ -81,8 +89,7 @@
         :src="recipe.imageUrl"
         :alt="recipe.title"
         :img-attrs="{
-          class:
-            'w-full rounded-lg overflow-hidden max-h-[600px] object-cover',
+          class: 'w-full rounded-lg overflow-hidden max-h-[600px] object-cover',
         }"
         :width="800"
         :height="600"
@@ -104,7 +111,10 @@
     </div>
     <USeparator />
     <UPageBody class="space-y-8">
-      <div v-if="recipe?.description" class="max-w-4xl prose prose-sm sm:prose-base">
+      <div
+        v-if="recipe?.description"
+        class="max-w-4xl prose prose-sm sm:prose-base"
+      >
         <p>{{ recipe.description }}</p>
       </div>
 
@@ -128,7 +138,7 @@
       </RecipeIngredientList>
 
       <div v-if="recipe?.steps && recipe.steps.length > 0" class="max-w-4xl">
-        <h2 class="mb-4 text-2xl text-pretty sm:text-3xl">Steps</h2>
+        <h2 class="mb-4 text-2xl text-pretty sm:text-3xl font-serif">Steps</h2>
         <div class="space-y-6 divide-y divide-gray-200">
           <RecipeStep
             v-for="(step, index) in recipe.steps"
@@ -143,7 +153,10 @@
 
       <!-- Nutrition Section -->
       <div class="mt-6">
-        <RecipeNutrition :recipe-id="recipeId" :servings="recipe?.servings ?? undefined" />
+        <RecipeNutrition
+          :recipe-id="recipeId"
+          :servings="recipe?.servings ?? undefined"
+        />
       </div>
 
       <USeparator class="mt-8" />
@@ -186,11 +199,14 @@ const { data: recipeIngredients } = await useFetch(
   `/api/recipes/${recipeId}/ingredients`,
 ).catch(() => ({ value: [] }));
 
-// Get navigation from all recipes
-const { data: allRecipes } = await useFetch("/api/recipes");
+// Up to 10 recipes with overlapping tags (falls back to recent)
+const { data: similarRecipes } = await useFetch(
+  `/api/recipes/${recipeId}/similar`,
+  { query: { limit: 10 } },
+);
 const navigation = computed(() => {
-  if (!allRecipes.value) return [];
-  return allRecipes.value.map((r: any) => ({
+  if (!similarRecipes.value) return [];
+  return similarRecipes.value.map((r: { id: string; title: string }) => ({
     title: r.title,
     to: `/recipes/${r.id}`,
   }));
