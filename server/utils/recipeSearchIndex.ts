@@ -127,9 +127,7 @@ export async function rebuildRecipeSearchIndex(options?: {
   offset?: number
   limit?: number
 }) {
-  // #region agent log
-  const _dbgStartedAt = Date.now()
-  // #endregion
+  const startedAt = Date.now()
 
   if (!(await checkFtsAvailable())) {
     return { indexed: 0, ftsAvailable: false, done: true, offset: 0, total: 0 }
@@ -140,19 +138,57 @@ export async function rebuildRecipeSearchIndex(options?: {
     ? Math.min(Math.max(options.limit, 1), 100)
     : undefined
 
-  // Full rebuild clears the index once at the start.
+  const recipes = await db.select({ id: schema.recipes.id }).from(schema.recipes)
+  const total = recipes.length
+
+  // Full rebuild in one SQL statement — avoids hundreds of D1 round-trips that
+  // exceed Cloudflare's ~125s proxy read timeout (error 524) on large cookbooks.
+  if (limit == null && offset === 0) {
+    await db.run(sql`DELETE FROM recipes_fts`)
+    await db.run(sql`
+      INSERT INTO recipes_fts (
+        recipe_id, title, description, tags, source, book, author, ingredients, steps, contributor
+      )
+      SELECT
+        r.id,
+        r.title,
+        COALESCE(r.description, ''),
+        COALESCE(r.tags, ''),
+        COALESCE(r.source, ''),
+        '',
+        '',
+        COALESCE((
+          SELECT group_concat(i.name, ' ')
+          FROM recipe_ingredients ri
+          JOIN ingredients i ON i.id = ri.ingredient_id
+          WHERE ri.recipe_id = r.id
+        ), ''),
+        COALESCE(r.steps, ''),
+        COALESCE(u.name, '')
+      FROM recipes r
+      LEFT JOIN users u ON u.id = r.author_id
+    `)
+    await invalidateSearchCache()
+
+    return {
+      indexed: total,
+      ftsAvailable: true,
+      offset: 0,
+      nextOffset: total,
+      total,
+      done: true,
+      durationMs: Date.now() - startedAt,
+      mode: 'bulk' as const
+    }
+  }
+
+  // Batched / incremental path (per-recipe documents with parsed book/author).
   if (offset === 0) {
     await db.run(sql`DELETE FROM recipes_fts`)
   }
 
-  const recipes = await db.select({ id: schema.recipes.id }).from(schema.recipes)
-  const total = recipes.length
-  const slice = limit == null ? recipes.slice(offset) : recipes.slice(offset, offset + limit)
+  const slice = recipes.slice(offset, offset + (limit ?? recipes.length))
   let indexed = 0
-
-  // #region agent log
-  fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4744c8'},body:JSON.stringify({sessionId:'4744c8',runId:'reindex-524',hypothesisId:'A',location:'recipeSearchIndex.ts:rebuild:start',message:'reindex batch start',data:{offset,limit:limit??null,total,sliceLen:slice.length,fullRebuild:limit==null},timestamp:Date.now()})}).catch(()=>{})
-  // #endregion
 
   for (const recipe of slice) {
     const doc = await buildRecipeSearchDocument(recipe.id)
@@ -169,11 +205,6 @@ export async function rebuildRecipeSearchIndex(options?: {
     await invalidateSearchCache()
   }
 
-  const durationMs = Date.now() - _dbgStartedAt
-  // #region agent log
-  fetch('http://127.0.0.1:7596/ingest/f00dd2c9-dd1d-440f-a637-fdc99e4efb0a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4744c8'},body:JSON.stringify({sessionId:'4744c8',runId:'reindex-524',hypothesisId:'C',location:'recipeSearchIndex.ts:rebuild:end',message:'reindex batch end',data:{offset,limit:limit??null,indexed,total,nextOffset,done,durationMs,msPerRecipe:indexed?Math.round(durationMs/indexed):null,wouldExceedCfTimeout:durationMs>=100000},timestamp:Date.now()})}).catch(()=>{})
-  // #endregion
-
   return {
     indexed,
     ftsAvailable: true,
@@ -181,8 +212,8 @@ export async function rebuildRecipeSearchIndex(options?: {
     nextOffset,
     total,
     done,
-    // Help operators see wall time without Cloudflare logs.
-    durationMs
+    durationMs: Date.now() - startedAt,
+    mode: 'batch' as const
   }
 }
 
