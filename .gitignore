@@ -37,3 +37,5 @@ scripts/recipe-sync/out/
 
 # Graphify local knowledge graph (regenerate with `graphify update .`)
 graphify-out/
+
+.cursor
