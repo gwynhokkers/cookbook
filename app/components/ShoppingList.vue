@@ -1,70 +1,120 @@
+<script setup lang="ts">
+import type { ShoppingListItemDto } from '~~/shared/utils/shoppingListTypes'
+
+const props = defineProps<{
+  items: ShoppingListItemDto[]
+  loading?: boolean
+}>()
+
+const emit = defineEmits<{
+  toggle: [itemId: string, checked: boolean]
+}>()
+
+const aisleOrder = [
+  'Produce',
+  'Bakery',
+  'Dairy',
+  'Meat & Seafood',
+  'Pantry',
+  'Frozen',
+  'Spices',
+  'Beverages',
+  'Other'
+]
+
+const grouped = computed(() => {
+  const map = new Map<string, ShoppingListItemDto[]>()
+  for (const item of props.items) {
+    const aisle = item.aisle || 'Other'
+    const bucket = map.get(aisle) || []
+    bucket.push(item)
+    map.set(aisle, bucket)
+  }
+
+  const ordered = [
+    ...aisleOrder.filter(name => map.has(name)),
+    ...[...map.keys()].filter(name => !aisleOrder.includes(name)).sort()
+  ]
+
+  return ordered.map(aisle => ({
+    aisle,
+    items: map.get(aisle) || []
+  }))
+})
+</script>
+
 <template>
   <div class="space-y-4">
-    <div v-if="ingredients.length === 0" class="text-center py-8 text-gray-500">
-      <p>No ingredients in shopping list</p>
-      <p class="text-sm mt-2">Add recipes to your shopping list to see ingredients here</p>
+    <div
+      v-if="!items.length"
+      class="rounded-lg border border-dashed border-default px-4 py-8 text-center text-muted"
+    >
+      <p>No ingredients yet.</p>
+      <p class="mt-1 text-sm">
+        Add recipes, then generate with Humphry to build your aisle list.
+      </p>
     </div>
-    
-    <div v-else class="space-y-2">
+
+    <div
+      v-for="group in grouped"
+      v-else
+      :key="group.aisle"
+      class="space-y-2"
+    >
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-muted">
+        {{ group.aisle }}
+      </h3>
       <div
-        v-for="ingredient in ingredients"
-        :key="ingredient.ingredientId"
-        class="flex items-center justify-between p-3 border rounded-lg"
+        v-for="item in group.items"
+        :key="item.id"
+        class="flex items-start gap-3 rounded-lg border border-default p-3"
       >
-        <div class="flex-1">
-          <div class="font-semibold">{{ ingredient.ingredientName }}</div>
-          <div class="text-sm text-gray-600 dark:text-gray-400">
-            {{ formatIngredientLine({ amount: ingredient.amount, unit: ingredient.unit }) }}
-            <span v-if="ingredient.recipes.length > 1" class="ml-2">
-              (from {{ ingredient.recipes.length }} recipes)
-            </span>
-          </div>
-        </div>
-        <input
-          type="checkbox"
-          :checked="checkedItems[ingredient.ingredientId]"
-          @change="checkedItems[ingredient.ingredientId] = ($event.target as HTMLInputElement).checked; updateChecked()"
-          class="w-4 h-4"
+        <UCheckbox
+          :model-value="item.checked"
+          :disabled="loading"
+          class="mt-1"
+          @update:model-value="emit('toggle', item.id, Boolean($event))"
         />
+        <div class="min-w-0 flex-1 space-y-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="font-medium">
+              <span class="text-highlighted">{{ item.displayAmount }}</span>
+              {{ item.name }}
+            </p>
+            <UBadge
+              v-if="item.needsReview"
+              color="warning"
+              variant="subtle"
+              size="sm"
+            >
+              Review amounts
+            </UBadge>
+          </div>
+          <p
+            v-if="item.packageSuggestion"
+            class="text-sm text-muted"
+          >
+            Buy: {{ item.packageSuggestion }}
+          </p>
+          <p
+            v-if="item.substitutionNote"
+            class="text-sm text-muted"
+          >
+            Note: {{ item.substitutionNote }}
+          </p>
+          <p
+            v-if="item.contributions.length > 1 || item.needsReview"
+            class="text-xs text-muted"
+          >
+            From:
+            {{
+              item.contributions
+                .map(c => `${c.title} (${c.amount} ${c.unit})`.trim())
+                .join(' · ')
+            }}
+          </p>
+        </div>
       </div>
     </div>
   </div>
 </template>
-
-<script setup lang="ts">
-import { useShoppingListStore } from '~/stores/shoppingList'
-import { formatIngredientLine } from '~~/shared/utils/formatIngredient'
-
-const store = useShoppingListStore()
-const checkedItems = ref<Record<string, boolean>>({})
-
-const ingredients = computed(() => store.getAggregatedIngredients())
-
-const updateChecked = () => {
-  // Save checked items to localStorage
-  if (process.client) {
-    try {
-      localStorage.setItem('shoppingListChecked', JSON.stringify(checkedItems.value))
-    } catch (e) {
-      // Ignore
-    }
-  }
-}
-
-onMounted(() => {
-  // Load checked items from localStorage
-  if (process.client) {
-    try {
-      const stored = localStorage.getItem('shoppingListChecked')
-      if (stored) {
-        checkedItems.value = JSON.parse(stored)
-      }
-    } catch (e) {
-      // Ignore
-    }
-  }
-  
-  // Load shopping list from localStorage
-  store.loadFromLocalStorage()
-})
-</script>

@@ -34,12 +34,22 @@
       </UPageAside>
     </template>
     <header class="space-y-4">
-      <h1
-        class="font-serif text-3xl leading-tight text-pretty sm:text-4xl lg:text-5xl"
-      >
-        {{ recipe?.title }}
-      </h1>
-
+      <div class="flex items-center gap-2 justify-between">
+        <h1
+          class="font-serif text-3xl leading-tight text-pretty sm:text-4xl lg:text-5xl"
+        >
+          {{ recipe?.title }}
+        </h1>
+        <UBadge
+          v-if="recipe?.visibility === 'private'"
+          color="warning"
+          variant="subtle"
+          class="shrink-0 hidden sm:block"
+        >
+          <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
+          Private
+        </UBadge>
+      </div>
       <div
         class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       >
@@ -53,14 +63,25 @@
             v-if="recipe?.visibility === 'private'"
             color="warning"
             variant="subtle"
-            class="shrink-0"
+            class="shrink-0 sm:hidden"
           >
             <UIcon name="i-heroicons-lock-closed" class="mr-1 size-3" />
             Private
           </UBadge>
         </div>
-        <Can v-if="recipe" :ability="editRecipeAbility">
-          <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1">
+          <UButton
+            v-if="recipe"
+            icon="i-lucide-shopping-cart"
+            variant="soft"
+            color="neutral"
+            class="shrink-0"
+            :loading="addingToList"
+            @click="addToTodayList"
+          >
+            <span class="hidden sm:inline">Add to list</span>
+          </UButton>
+          <Can v-if="recipe" :ability="editRecipeAbility">
             <UButton
               icon="i-heroicons-pencil"
               variant="ghost"
@@ -78,8 +99,8 @@
             >
               <span class="hidden sm:inline">Delete</span>
             </UButton>
-          </div>
-        </Can>
+          </Can>
+        </div>
       </div>
     </header>
 
@@ -172,6 +193,9 @@ import { formatIngredientLine } from "~~/shared/utils/formatIngredient";
 const { seo } = useAppConfig();
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
+const { loggedIn } = useUserSession();
+const addingToList = ref(false);
 
 definePageMeta({
   layout: "recipes",
@@ -180,6 +204,57 @@ definePageMeta({
 const recipeId = Array.isArray(route.params.id)
   ? route.params.id[0]
   : route.params.id;
+
+function localTodayIso() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function addToTodayList() {
+  if (!recipeId) {
+    return;
+  }
+
+  if (!loggedIn.value) {
+    await navigateTo(`/login?redirect=${encodeURIComponent(route.fullPath)}`);
+    return;
+  }
+
+  addingToList.value = true;
+  try {
+    const date = localTodayIso();
+    const list = await $fetch<{ id: string; listDate: string }>(
+      "/api/shopping-lists/today",
+      { query: { date } },
+    );
+    await $fetch(`/api/shopping-lists/${list.id}/recipes`, {
+      method: "POST",
+      body: { recipeIds: [recipeId] },
+    });
+    toast.add({
+      title: "Added to shopping list",
+      description: "Recipe added to today's list.",
+      color: "success",
+      actions: [
+        {
+          label: "Open list",
+          onClick: () => navigateTo(`/shopping-list?date=${list.listDate}`),
+        },
+      ],
+    });
+  } catch (error: unknown) {
+    toast.add({
+      title: "Could not add recipe",
+      description: error instanceof Error ? error.message : "Please try again.",
+      color: "error",
+    });
+  } finally {
+    addingToList.value = false;
+  }
+}
 
 const {
   data: recipe,

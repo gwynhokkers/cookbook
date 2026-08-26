@@ -7,6 +7,13 @@ import { viewRecipe } from '~~/shared/utils/abilities'
 import { getFavoriteRecipeIds } from './recipeFavorites'
 import { searchRecipes } from './recipeSearch'
 import type { HumphryRecipeSummary } from '~~/shared/utils/humphryTypes'
+import {
+  formatShoppingListCopyText,
+  generateShoppingList,
+  getOrCreateShoppingList,
+  isValidListDate,
+  setShoppingListRecipes
+} from './shoppingLists'
 
 const recipeSummaryFields = {
   id: schema.recipes.id,
@@ -30,6 +37,27 @@ function toSummary(row: {
     imageUrl: row.imageUrl,
     tags: row.tags || []
   }
+}
+
+function localTodayIso() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function resolveListDate(date?: string | null) {
+  if (!date) {
+    return localTodayIso()
+  }
+  if (!isValidListDate(date)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid date. Use YYYY-MM-DD.'
+    })
+  }
+  return date
 }
 
 async function loadRecipeDetails(recipeId: string, event: H3Event) {
@@ -63,7 +91,7 @@ async function loadRecipeDetails(recipeId: string, event: H3Event) {
     tags: rows[0].tags || [],
     source: rows[0].source,
     stepCount: steps.length,
-    ingredients: ingredients.map((row) => ({
+    ingredients: ingredients.map(row => ({
       name: row.name,
       amount: row.amount,
       unit: row.unit
@@ -77,7 +105,6 @@ export function createHumphryTools(event: H3Event, userId: string) {
       description: 'Search the Humboldt Kitchen cookbook by keywords, ingredients, tags, or recipe names.',
       inputSchema: z.object({
         query: z.string().min(2).describe('Search terms such as ingredients, dish type, or recipe name'),
-        // Workers AI sometimes emits numbers as strings ("8") — coerce so validation succeeds.
         limit: z.coerce.number().int().min(1).max(15).optional().describe('Maximum number of results (default 8)')
       }),
       execute: async ({ query, limit }) => {
@@ -90,7 +117,7 @@ export function createHumphryTools(event: H3Event, userId: string) {
         })
 
         return {
-          recipes: results.map((result) => ({
+          recipes: results.map(result => ({
             id: result.id,
             title: result.title,
             description: result.description,
@@ -132,6 +159,94 @@ export function createHumphryTools(event: H3Event, userId: string) {
 
         return {
           recipes: sorted.map(toSummary)
+        }
+      }
+    }),
+
+    get_shopping_list: tool({
+      description: 'Get the user shopping list for a date (default today), including recipes and aisle-grouped items.',
+      inputSchema: z.object({
+        date: z.string().optional().describe('Local calendar date YYYY-MM-DD (defaults to today)')
+      }),
+      execute: async ({ date }) => {
+        const listDate = resolveListDate(date)
+        const list = await getOrCreateShoppingList(userId, listDate)
+        return {
+          listDate: list.listDate,
+          status: list.status,
+          pageUrl: `/shopping-list?date=${list.listDate}`,
+          recipes: list.recipes,
+          itemCount: list.items.length,
+          items: list.items.map(item => ({
+            name: item.name,
+            displayAmount: item.displayAmount,
+            aisle: item.aisle,
+            packageSuggestion: item.packageSuggestion,
+            substitutionNote: item.substitutionNote,
+            needsReview: item.needsReview,
+            checked: item.checked
+          })),
+          copyText: formatShoppingListCopyText(list)
+        }
+      }
+    }),
+
+    set_shopping_list_recipes: tool({
+      description: 'Add or replace recipes on the shopping list for a date. Use mode=add to append, replace to set exactly.',
+      inputSchema: z.object({
+        recipeIds: z.array(z.string().min(1)).min(1).max(30),
+        date: z.string().optional().describe('Local calendar date YYYY-MM-DD (defaults to today)'),
+        mode: z.enum(['add', 'replace']).optional().describe('add (default) or replace')
+      }),
+      execute: async ({ recipeIds, date, mode }) => {
+        const listDate = resolveListDate(date)
+        const list = await getOrCreateShoppingList(userId, listDate)
+        const updated = await setShoppingListRecipes(
+          event,
+          list.id,
+          userId,
+          recipeIds,
+          mode === 'replace' ? 'replace' : 'add'
+        )
+        return {
+          listDate: updated.listDate,
+          pageUrl: `/shopping-list?date=${updated.listDate}`,
+          recipes: updated.recipes,
+          status: updated.status
+        }
+      }
+    }),
+
+    generate_shopping_list: tool({
+      description: 'Amalgamate ingredients for the shopping list recipes and enrich with aisle/package/substitution suggestions.',
+      inputSchema: z.object({
+        date: z.string().optional().describe('Local calendar date YYYY-MM-DD (defaults to today)')
+      }),
+      execute: async ({ date }) => {
+        const listDate = resolveListDate(date)
+        const list = await getOrCreateShoppingList(userId, listDate)
+        const generated = await generateShoppingList(event, list.id, userId)
+
+        const byAisle = new Map<string, Array<{ name: string, displayAmount: string, packageSuggestion: string | null }>>()
+        for (const item of generated.items) {
+          const aisle = item.aisle || 'Other'
+          const bucket = byAisle.get(aisle) || []
+          bucket.push({
+            name: item.name,
+            displayAmount: item.displayAmount,
+            packageSuggestion: item.packageSuggestion
+          })
+          byAisle.set(aisle, bucket)
+        }
+
+        return {
+          listDate: generated.listDate,
+          status: generated.status,
+          warning: generated.warning || null,
+          pageUrl: `/shopping-list?date=${generated.listDate}`,
+          recipes: generated.recipes.map(r => r.title),
+          aisles: [...byAisle.entries()].map(([aisle, items]) => ({ aisle, items })),
+          copyText: formatShoppingListCopyText(generated)
         }
       }
     })
