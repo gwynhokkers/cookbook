@@ -20,6 +20,8 @@ Runs on `http://localhost:3000`. NuxtHub auto-provisions an embedded SQLite data
 |------|---------|
 | Install deps | `bun install` |
 | Dev server | `bun run dev` |
+| Test | `bun run test` |
+| Test with coverage | `bun run test:coverage` |
 | Lint | `bun run lint` |
 | Typecheck | `bun run typecheck` |
 | Build | `bun run build` |
@@ -47,3 +49,17 @@ Runs on `http://localhost:3000`. NuxtHub auto-provisions an embedded SQLite data
 - **Recipe visibility**: Recipes have `visibility` (`public`/`private`). Unauthenticated users see only public recipes. Signed-in users see all.
 - **Hub config**: `hub.db` must be `'sqlite'` (not an object with `connection.databaseId`). Passing resource IDs via env vars creates duplicate wrangler bindings. Bindings are managed via Cloudflare Pages dashboard instead.
 - **Pre-existing lint/type errors**: The codebase has ~340 ESLint errors and type errors. These are pre-existing and not blocking dev server startup.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on this repo (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical roles map 1:1 to `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.

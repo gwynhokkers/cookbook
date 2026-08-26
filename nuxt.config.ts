@@ -11,6 +11,7 @@ export default defineNuxtConfig({
     "nuxt-auth-utils",
     "nuxt-authorization",
     "@pinia/nuxt",
+    "@nuxt/test-utils/module",
   ],
 
   // Enable Nuxt UI content components (e.g. UContentToc) without @nuxt/content
