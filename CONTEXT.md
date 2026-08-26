@@ -1,33 +1,35 @@
-# Megwyn CookBook
+# CookBook
 
-Recipe management app: recipes, shopping lists, and Humphry (AI kitchen assistant), with role-based access.
+Recipe management for a household cookbook: capture recipes (including from images), search and browse them, chat with a sous-chef assistant, and build shopping lists.
 
 ## Language
 
-**Recipe**:
-A cookable dish stored in the cookbook, with ingredients, steps, and visibility.
-_Avoid_: Post, document, content item
+### Capture
 
-**Visibility**:
-Whether a recipe is `public` (guests may view) or `private` (signed-in users only).
-_Avoid_: Access level, privacy setting
+**Extraction**:
+Turning recipe images into a structured **Extracted draft**.
+_Avoid_: Scan (UI gesture), pipeline (config detail), OCR (one stage inside Extraction)
 
-**Ability**:
-A named permission (e.g. `viewRecipe`, `manageShoppingList`) evaluated for a user (and often a resource).
-_Avoid_: Permission check, ACL rule, authz policy
+**Extracted draft**:
+The structured recipe fields produced by Extraction before a human edits them (title, description, ingredients, steps, tags, servings).
+_Avoid_: ExtractedRecipe (type name), prefill payload
 
-**Role**:
-A user’s capability tier: `viewer`, `editor`, or `admin`.
-_Avoid_: Permission level, access group
+**Prefill**:
+Applying an Extracted draft onto an editable recipe form.
+_Avoid_: Merge, hydrate (implementation steps inside Prefill)
 
-**Shopping list**:
-A dated, per-user list of recipes and amalgamated ingredients for shopping.
-_Avoid_: Cart, basket, grocery list (as a synonym in code/docs)
+### Assistant
 
-**Amalgamation**:
-Merging ingredients across a shopping list’s recipes into combined line items (units reconciled where possible).
-_Avoid_: Aggregation, merge-pass, consolidate
+**Humphry turn**:
+One signed-in chat exchange: prior messages in, a UI stream (and tool outcomes) out.
+_Avoid_: Chat session (multi-turn state), completion, generation
 
-**Humphry session**:
-A persisted chat thread with the AI assistant, owned by one user.
-_Avoid_: Conversation, thread (unless clearly UI-only)
+### Recipe editing
+
+**Recipe editor**:
+The form state and validation for creating or updating a recipe.
+_Avoid_: RecipeForm (the Vue file), scan UI
+
+**Recipe save**:
+Persisting a recipe editor's state through today's create/update and ingredient-link routes.
+_Avoid_: PersistRecipe (deferred deepening: one server write of the full aggregate)
