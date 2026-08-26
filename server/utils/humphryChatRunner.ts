@@ -10,6 +10,7 @@ import {
 import type { H3Event } from 'h3'
 import { HUMPHRY_SYSTEM_PROMPT } from './humphryPrompt'
 import { createHumphryTools } from './humphryTools'
+import { appendAssistantMessage } from './humphrySessions'
 import { getWorkersAiModel } from './workersAiModel'
 
 function findToolOutcome(
@@ -19,7 +20,7 @@ function findToolOutcome(
   },
   toolCallId: string
 ) {
-  const fromContent = step.content.find((part) =>
+  const fromContent = step.content.find(part =>
     part.toolCallId === toolCallId
     && (part.type === 'tool-result' || part.type === 'tool-error')
   )
@@ -37,7 +38,7 @@ function findToolOutcome(
     return { kind: 'error' as const, errorText }
   }
 
-  const fromResults = step.toolResults.find((result) => result.toolCallId === toolCallId)
+  const fromResults = step.toolResults.find(result => result.toolCallId === toolCallId)
   if (fromResults) {
     return { kind: 'result' as const, output: fromResults.output ?? null }
   }
@@ -48,7 +49,8 @@ function findToolOutcome(
 export async function createHumphryChatResponse(
   event: H3Event,
   uiMessages: UIMessage[],
-  userId: string
+  userId: string,
+  sessionId: string
 ) {
   const config = useRuntimeConfig(event)
   const model = getWorkersAiModel(event, String(config.humphryModel))
@@ -66,6 +68,40 @@ export async function createHumphryChatResponse(
     stopWhen: isStepCount(maxSteps),
     maxOutputTokens: 4096
   })
+
+  const assistantParts: UIMessage['parts'] = []
+
+  for (const step of result.steps) {
+    for (const toolCall of step.toolCalls) {
+      const outcome = findToolOutcome(step, toolCall.toolCallId)
+      const toolPart = {
+        type: `tool-${toolCall.toolName}`,
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        input: toolCall.input,
+        state: outcome.kind === 'result' ? 'output-available' : 'output-error',
+        ...(outcome.kind === 'result'
+          ? { output: outcome.output }
+          : { errorText: outcome.kind === 'error' ? outcome.errorText : 'Tool execution did not complete' })
+      } as UIMessage['parts'][number]
+      assistantParts.push(toolPart)
+    }
+  }
+
+  if (result.text) {
+    assistantParts.push({
+      type: 'text',
+      text: result.text
+    })
+  }
+
+  const assistantMessage: UIMessage = {
+    id: generateId(),
+    role: 'assistant',
+    parts: assistantParts
+  }
+
+  await appendAssistantMessage(sessionId, userId, assistantMessage)
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({

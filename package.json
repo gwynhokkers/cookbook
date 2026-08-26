@@ -18,7 +18,10 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@ai-sdk/vue": "^4.0.77",
@@ -50,10 +53,15 @@
     "@iconify-json/lucide": "^1.2.111",
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/image": "^2.0.0",
+    "@nuxt/test-utils": "^4.1.0",
     "@tailwindcss/typography": "^0.5.20",
+    "@vitest/coverage-v8": "^4.1.11",
+    "@vue/test-utils": "^2.4.11",
     "better-sqlite3": "^12.10.0",
     "drizzle-kit": "latest",
+    "happy-dom": "^20.11.6",
     "nuxt": "^4.4.8",
-    "strip-json-comments": "^5.0.3"
+    "strip-json-comments": "^5.0.3",
+    "vitest": "^4.1.11"
   }
 }

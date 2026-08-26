@@ -2,8 +2,11 @@ import type { UIMessage } from 'ai'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
 import { createHumphryChatResponse } from '../../utils/humphryChatRunner'
+import { persistHumphryChatTurn } from '../../utils/humphrySessions'
+import { requireShoppingUserId } from '../../utils/shoppingAuth'
 
 const chatBodySchema = z.object({
+  sessionId: z.string().min(1),
   messages: z.array(z.object({
     id: z.string().optional(),
     role: z.enum(['user', 'assistant', 'system']),
@@ -12,37 +15,30 @@ const chatBodySchema = z.object({
   }).passthrough()).max(40)
 })
 
-async function getUserId(event: H3Event) {
-  const session = await requireUserSession(event)
-  const userId = (session.user as Record<string, unknown> | undefined)?.id as string | undefined
-  if (!userId) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: 'Sign in required'
-    })
-  }
-  return userId
-}
-
 export default defineEventHandler(async (event) => {
-  const userId = await getUserId(event)
+  const userId = await requireShoppingUserId(event)
   const body = await readBody(event)
   const parsed = chatBodySchema.safeParse(body)
 
   if (!parsed.success) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Invalid chat request'
+      statusMessage: 'Invalid chat request. sessionId and messages are required.'
     })
   }
 
   const uiMessages = parsed.data.messages as UIMessage[]
+  const sessionId = parsed.data.sessionId
+
+  // Persist inbound messages (including the latest user turn) before generation.
+  await persistHumphryChatTurn(sessionId, userId, uiMessages)
 
   try {
     return await createHumphryChatResponse(
       event,
       uiMessages,
-      userId
+      userId,
+      sessionId
     )
   } catch (error) {
     if (error && typeof error === 'object' && 'statusCode' in error) {

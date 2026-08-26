@@ -71,6 +71,14 @@ async function handleSignOut() {
       <div class="hidden md:flex items-center gap-1">
         <UButton
           v-if="loggedIn"
+          to="/shopping-list"
+          icon="i-lucide-shopping-cart"
+          variant="ghost"
+          color="neutral"
+          aria-label="Shopping list"
+        />
+        <UButton
+          v-if="loggedIn"
           to="/humphry"
           icon="i-lucide-chef-hat"
           variant="ghost"
@@ -122,6 +130,16 @@ async function handleSignOut() {
             to="/"
           >
             Home
+          </UButton>
+          <UButton
+            v-if="loggedIn"
+            :class="menuButtonClass"
+            icon="i-lucide-shopping-cart"
+            variant="ghost"
+            color="neutral"
+            to="/shopping-list"
+          >
+            Shopping list
           </UButton>
           <UButton
             v-if="loggedIn"
