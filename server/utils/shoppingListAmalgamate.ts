@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { and, eq, inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db, schema } from '../db'
 import { viewRecipe } from '~~/shared/utils/abilities'
 import { formatIngredientLine } from '~~/shared/utils/formatIngredient'
@@ -7,6 +7,7 @@ import type {
   AmalgamatedIngredient,
   ShoppingListContribution
 } from '~~/shared/utils/shoppingListTypes'
+import { assertUserOwnsShoppingList } from './shoppingAuth'
 import { convertUnit, getUnitType, normalizeUnit } from './unitConverter'
 
 type RawContribution = ShoppingListContribution & {
@@ -279,18 +280,8 @@ export async function getShoppingListRecipeIds(listId: string): Promise<string[]
 export async function assertShoppingListOwned(listId: string, userId: string) {
   const rows = await db.select()
     .from(schema.shoppingLists)
-    .where(and(
-      eq(schema.shoppingLists.id, listId),
-      eq(schema.shoppingLists.userId, userId)
-    ))
+    .where(eq(schema.shoppingLists.id, listId))
     .limit(1)
 
-  if (!rows.length) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Shopping list not found'
-    })
-  }
-
-  return rows[0]!
+  return assertUserOwnsShoppingList(rows[0], userId)
 }
