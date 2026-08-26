@@ -42,3 +42,4 @@ scripts/recipe-sync/out/
 graphify-out/
 
 .cursor
+.worktrees/
