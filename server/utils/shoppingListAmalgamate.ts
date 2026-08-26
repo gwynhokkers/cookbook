@@ -1,15 +1,13 @@
 import type { H3Event } from 'h3'
 import { and, eq, inArray } from 'drizzle-orm'
-import { db, schema } from '../db'
-import { viewRecipe } from '~~/shared/utils/abilities'
-import { formatIngredientLine } from '~~/shared/utils/formatIngredient'
+import { formatIngredientLine } from '../../shared/utils/formatIngredient'
 import type {
   AmalgamatedIngredient,
   ShoppingListContribution
-} from '~~/shared/utils/shoppingListTypes'
+} from '../../shared/utils/shoppingListTypes'
 import { convertUnit, getUnitType, normalizeUnit } from './unitConverter'
 
-type RawContribution = ShoppingListContribution & {
+export type RawContribution = ShoppingListContribution & {
   ingredientId: string
   ingredientName: string
 }
@@ -199,10 +197,29 @@ function mergeGroup(rows: RawContribution[]): AmalgamatedIngredient {
   }
 }
 
+/** Pure transform: group contributions by ingredient, merge, sort by name. */
+export function amalgamateContributions(rows: RawContribution[]): AmalgamatedIngredient[] {
+  const groups = new Map<string, RawContribution[]>()
+
+  for (const row of rows) {
+    const key = row.ingredientId
+    const list = groups.get(key) || []
+    list.push(row)
+    groups.set(key, list)
+  }
+
+  return [...groups.values()]
+    .map(mergeGroup)
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 export async function amalgamateRecipeIngredients(
   event: H3Event,
   recipeIds: string[]
 ): Promise<AmalgamatedIngredient[]> {
+  const { db, schema } = await import('../db')
+  const { viewRecipe } = await import('../../shared/utils/abilities')
+
   const uniqueIds = [...new Set(recipeIds.filter(Boolean))]
   if (!uniqueIds.length) {
     return []
@@ -244,29 +261,22 @@ export async function amalgamateRecipeIngredients(
     )
     .where(inArray(schema.recipeIngredients.recipeId, allowedIds))
 
-  const groups = new Map<string, RawContribution[]>()
+  const contributions: RawContribution[] = rows.map(row => ({
+    recipeId: row.recipeId,
+    title: titleById.get(row.recipeId) || 'Recipe',
+    amount: row.amount,
+    unit: row.unit,
+    notes: row.notes,
+    ingredientId: row.ingredientId,
+    ingredientName: row.ingredientName
+  }))
 
-  for (const row of rows) {
-    const key = row.ingredientId
-    const list = groups.get(key) || []
-    list.push({
-      recipeId: row.recipeId,
-      title: titleById.get(row.recipeId) || 'Recipe',
-      amount: row.amount,
-      unit: row.unit,
-      notes: row.notes,
-      ingredientId: row.ingredientId,
-      ingredientName: row.ingredientName
-    })
-    groups.set(key, list)
-  }
-
-  return [...groups.values()]
-    .map(mergeGroup)
-    .sort((a, b) => a.name.localeCompare(b.name))
+  return amalgamateContributions(contributions)
 }
 
 export async function getShoppingListRecipeIds(listId: string): Promise<string[]> {
+  const { db, schema } = await import('../db')
+
   const rows = await db.select({
     recipeId: schema.shoppingListRecipes.recipeId
   })
@@ -277,6 +287,8 @@ export async function getShoppingListRecipeIds(listId: string): Promise<string[]
 }
 
 export async function assertShoppingListOwned(listId: string, userId: string) {
+  const { db, schema } = await import('../db')
+
   const rows = await db.select()
     .from(schema.shoppingLists)
     .where(and(
