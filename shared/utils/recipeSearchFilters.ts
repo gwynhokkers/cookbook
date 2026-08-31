@@ -48,3 +48,10 @@ export function recipeMatchesTagFilter(recipeTags: string[] | null | undefined, 
   const normalized = new Set((recipeTags || []).map((t) => t.toLowerCase()))
   return filterTags.some((t) => normalized.has(t.toLowerCase()))
 }
+
+export function clampSearchPage(page: number, totalPages: number): number {
+  if (totalPages <= 0) return 1
+  if (page < 1) return 1
+  if (page > totalPages) return totalPages
+  return page
+}

@@ -1,24 +1,17 @@
 import { viewAllRecipes } from '~~/shared/utils/abilities'
+import { parseRecipeSearchFilters } from '~~/shared/utils/recipeSearchFilters'
 import { getFavoriteRecipeIds, buildFavoritesFingerprint } from '../../utils/recipeFavorites'
-import { searchRecipes } from '../../utils/recipeSearch'
+import { queryRecipeSearch } from '../../utils/recipeSearch'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const q = String(query.q || '').trim()
-  const limit = Number(query.limit || 20)
+  const page = Math.max(1, Number(query.page) || 1)
+  const pageSize = Math.min(Math.max(Number(query.limit) || 12, 1), 12)
   const scope = String(query.scope || 'all') === 'favorites' ? 'favorites' : 'all'
+  const filters = parseRecipeSearchFilters(query as Record<string, unknown>)
   const canViewAll = await allows(event, viewAllRecipes)
-
-  if (!q) {
-    return []
-  }
-
-  if (q.length < 2) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Search query must be at least 2 characters'
-    })
-  }
+  const searchQuery = q.length >= 2 ? q : ''
 
   if (scope === 'favorites' && !canViewAll) {
     throw createError({
@@ -39,9 +32,11 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  return searchRecipes({
-    query: q,
-    limit: Number.isFinite(limit) ? limit : 20,
+  return queryRecipeSearch({
+    query: searchQuery,
+    filters,
+    page,
+    pageSize,
     signedIn: canViewAll,
     scope,
     favoriteRecipeIds,

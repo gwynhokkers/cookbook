@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRecipeSearchFilters, serializeRecipeSearchFilters } from '~~/shared/utils/recipeSearchFilters'
+import { parseRecipeSearchFilters, serializeRecipeSearchFilters, clampSearchPage } from '~~/shared/utils/recipeSearchFilters'
 
 describe('parseRecipeSearchFilters', () => {
   it('parses comma-separated params', () => {
@@ -27,5 +27,13 @@ describe('serializeRecipeSearchFilters', () => {
     const filters = { tags: ['curry'], sources: [], diet: ['vegan' as const], time: '30-60' as const }
     const query = serializeRecipeSearchFilters(filters)
     expect(parseRecipeSearchFilters(query)).toEqual(filters)
+  })
+})
+
+describe('clampSearchPage', () => {
+  it('clamps page to valid range', () => {
+    expect(clampSearchPage(0, 5)).toBe(1)
+    expect(clampSearchPage(99, 3)).toBe(3)
+    expect(clampSearchPage(2, 3)).toBe(2)
   })
 })

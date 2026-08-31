@@ -1,6 +1,21 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { db, schema } from '../db'
 import { parseRecipeSource } from '~~/shared/utils/formatRecipeSource'
+import {
+  type RecipeSearchFilters,
+  clampSearchPage
+} from '~~/shared/utils/recipeSearchFilters'
+import type {
+  PaginatedRecipeSearchResults,
+  RecipeSearchResult,
+  SearchMatchField
+} from '~~/shared/utils/recipeSearchTypes'
+import { emptyPaginatedSearchResults } from '~~/shared/utils/recipeSearchTypes'
+import {
+  buildJsonTagsOrMatchSql,
+  buildSourcesOrMatchSql,
+  buildTimeFilterSql
+} from './recipeSearchFilters'
 import {
   buildSearchCacheKey,
   getCachedSearchResults,
@@ -8,7 +23,6 @@ import {
   isRecipeFtsAvailable,
   setCachedSearchResults
 } from './recipeSearchIndex'
-import type { RecipeSearchResult, SearchMatchField } from '~~/shared/utils/recipeSearchTypes'
 
 interface SearchOptions {
   query: string
@@ -19,33 +33,74 @@ interface SearchOptions {
   favoritesFingerprint?: string
 }
 
-const FAVORITE_SEARCH_BOOST = 75
+export interface QueryRecipeSearchOptions {
+  query?: string
+  filters?: RecipeSearchFilters
+  page?: number
+  pageSize?: number
+  signedIn: boolean
+  scope?: 'all' | 'favorites'
+  favoriteRecipeIds?: string[]
+  favoritesFingerprint?: string
+}
 
-function getRestrictToRecipeIds(options: SearchOptions) {
-  if (options.scope === 'favorites') {
-    return options.favoriteRecipeIds || []
+const FAVORITE_SEARCH_BOOST = 75
+const EMPTY_FILTERS: RecipeSearchFilters = { tags: [], sources: [], diet: [], time: null }
+
+export { clampSearchPage }
+
+function getRestrictToRecipeIds(scope: 'all' | 'favorites', favoriteRecipeIds?: string[]) {
+  if (scope === 'favorites') {
+    return favoriteRecipeIds || []
   }
   return undefined
 }
 
-function finalizeSearchResults(results: RecipeSearchResult[], options: SearchOptions) {
-  const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
-  let next = results
+function parseTagsField(tags: string | string[] | null | undefined): string[] {
+  if (Array.isArray(tags)) return tags
+  if (typeof tags === 'string') {
+    try {
+      return JSON.parse(tags || '[]')
+    } catch {
+      return []
+    }
+  }
+  return []
+}
 
-  if (options.scope === 'favorites') {
-    const favoriteSet = new Set(options.favoriteRecipeIds || [])
-    next = next.filter((result) => favoriteSet.has(result.id))
-  } else if (options.favoriteRecipeIds?.length) {
-    const favoriteSet = new Set(options.favoriteRecipeIds)
-    next = next.map((result) => ({
-      ...result,
-      score: favoriteSet.has(result.id) ? result.score + FAVORITE_SEARCH_BOOST : result.score
-    }))
+function buildBaseWhereClauses(
+  signedIn: boolean,
+  restrictToRecipeIds: string[] | undefined,
+  filters: RecipeSearchFilters
+): SQL[] {
+  const clauses: SQL[] = []
+
+  if (!signedIn) {
+    clauses.push(sql`r.visibility = 'public'`)
   }
 
-  return next
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
+  if (restrictToRecipeIds?.length) {
+    clauses.push(sql`r.id IN (${sql.join(restrictToRecipeIds.map((id) => sql`${id}`), sql`, `)})`)
+  }
+
+  const tagsClause = buildJsonTagsOrMatchSql(sql`r.tags`, filters.tags)
+  if (tagsClause) clauses.push(tagsClause)
+
+  const sourcesClause = buildSourcesOrMatchSql(filters.sources)
+  if (sourcesClause) clauses.push(sourcesClause)
+
+  const dietClause = buildJsonTagsOrMatchSql(sql`r.tags`, filters.diet)
+  if (dietClause) clauses.push(dietClause)
+
+  const timeClause = buildTimeFilterSql(filters.time)
+  if (timeClause) clauses.push(timeClause)
+
+  return clauses
+}
+
+function combineWhere(clauses: SQL[]): SQL {
+  if (!clauses.length) return sql`1 = 1`
+  return sql.join(clauses.map((clause) => sql`(${clause})`), sql` AND `)
 }
 
 function escapeFtsToken(token: string) {
@@ -205,22 +260,136 @@ function buildSnippet(
   return recipe.title
 }
 
-async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult[]> {
-  const limit = options.limit ?? 20
-  const ftsQuery = toFtsQuery(options.query)
-  if (!ftsQuery) return []
+function toBrowseResult(row: {
+  id: string
+  title: string
+  description: string | null
+  imageUrl: string | null
+  tags: string | string[] | null
+  source: string | null
+  visibility: string
+  estimatedMinutes: number | null
+}): RecipeSearchResult {
+  const tags = parseTagsField(row.tags)
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    imageUrl: row.imageUrl,
+    tags,
+    source: row.source,
+    visibility: row.visibility,
+    estimatedMinutes: row.estimatedMinutes,
+    matchedOn: [],
+    snippet: row.description?.slice(0, 120) || row.title,
+    score: 0
+  }
+}
 
-  const restrictToRecipeIds = getRestrictToRecipeIds(options)
-  if (restrictToRecipeIds && restrictToRecipeIds.length === 0) {
-    return []
+async function countFilteredRecipes(whereClause: SQL): Promise<number> {
+  const rows = await db.all(sql`
+    SELECT COUNT(*) AS total
+    FROM recipes r
+    WHERE ${whereClause}
+  `) as Array<{ total: number }>
+  return Number(rows[0]?.total || 0)
+}
+
+async function queryBrowseRecipes(
+  whereClause: SQL,
+  page: number,
+  pageSize: number
+): Promise<PaginatedRecipeSearchResults> {
+  const total = await countFilteredRecipes(whereClause)
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0
+  const safePage = clampSearchPage(page, totalPages)
+  const offset = (safePage - 1) * pageSize
+
+  if (total === 0) {
+    return { ...emptyPaginatedSearchResults(pageSize), page: safePage }
   }
 
-  const visibilityClause = options.signedIn
+  const rows = await db.all(sql`
+    SELECT
+      r.id,
+      r.title,
+      r.description,
+      r.image_url AS imageUrl,
+      r.tags,
+      r.source,
+      r.visibility,
+      r.estimated_minutes AS estimatedMinutes
+    FROM recipes r
+    WHERE ${whereClause}
+    ORDER BY r.date DESC
+    LIMIT ${pageSize}
+    OFFSET ${offset}
+  `) as Array<{
+    id: string
+    title: string
+    description: string | null
+    imageUrl: string | null
+    tags: string | string[] | null
+    source: string | null
+    visibility: string
+    estimatedMinutes: number | null
+  }>
+
+  return {
+    items: rows.map(toBrowseResult),
+    page: safePage,
+    pageSize,
+    total,
+    totalPages
+  }
+}
+
+async function getFilteredRecipeIds(whereClause: SQL): Promise<string[]> {
+  const rows = await db.all(sql`
+    SELECT r.id
+    FROM recipes r
+    WHERE ${whereClause}
+  `) as Array<{ id: string }>
+  return rows.map((row) => row.id)
+}
+
+function applyFavoriteBoost(
+  results: RecipeSearchResult[],
+  scope: 'all' | 'favorites',
+  favoriteRecipeIds?: string[]
+) {
+  if (scope === 'favorites') {
+    const favoriteSet = new Set(favoriteRecipeIds || [])
+    return results.filter((result) => favoriteSet.has(result.id))
+  }
+
+  if (!favoriteRecipeIds?.length) return results
+
+  const favoriteSet = new Set(favoriteRecipeIds)
+  return results.map((result) => ({
+    ...result,
+    score: favoriteSet.has(result.id) ? result.score + FAVORITE_SEARCH_BOOST : result.score
+  }))
+}
+
+async function searchWithFtsFiltered(
+  query: string,
+  allowedIds: string[] | null,
+  signedIn: boolean,
+  scope: 'all' | 'favorites',
+  favoriteRecipeIds?: string[]
+): Promise<RecipeSearchResult[]> {
+  const ftsQuery = toFtsQuery(query)
+  if (!ftsQuery) return []
+
+  if (allowedIds && allowedIds.length === 0) return []
+
+  const visibilityClause = signedIn
     ? sql`1 = 1`
     : sql`r.visibility = 'public'`
 
-  const favoriteFilter = restrictToRecipeIds?.length
-    ? sql`AND recipes_fts.recipe_id IN (${sql.join(restrictToRecipeIds.map((id) => sql`${id}`), sql`, `)})`
+  const idFilter = allowedIds?.length
+    ? sql`AND recipes_fts.recipe_id IN (${sql.join(allowedIds.map((id) => sql`${id}`), sql`, `)})`
     : sql``
 
   const rows = await db.all(sql`
@@ -232,14 +401,15 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
       r.tags,
       r.source,
       r.visibility,
+      r.estimated_minutes AS estimatedMinutes,
       bm25(recipes_fts) AS rank
     FROM recipes_fts
     JOIN recipes r ON recipes_fts.recipe_id = r.id
     WHERE recipes_fts MATCH ${ftsQuery}
       AND ${visibilityClause}
-      ${favoriteFilter}
+      ${idFilter}
     ORDER BY rank
-    LIMIT ${Math.max(limit, 50)}
+    LIMIT 500
   `) as Array<{
     id: string
     title: string
@@ -248,10 +418,11 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
     tags: string | string[] | null
     source: string | null
     visibility: string
+    estimatedMinutes: number | null
     rank: number
   }>
 
-  const terms = options.query.toLowerCase().split(/\s+/).filter(Boolean)
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   const recipeIds = rows.map((row) => row.id)
 
   const recipeRowsById = new Map<string, { steps: Array<{ title: string; content: string }> | null, authorId: string | null }>()
@@ -277,12 +448,7 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
   const results: RecipeSearchResult[] = []
 
   for (const row of rows) {
-    const tags = Array.isArray(row.tags)
-      ? row.tags
-      : typeof row.tags === 'string'
-        ? JSON.parse(row.tags || '[]')
-        : []
-
+    const tags = parseTagsField(row.tags)
     const meta = recipeRowsById.get(row.id)
     const contributor = meta?.authorId ? (contributors.get(meta.authorId) || '') : ''
     const ingredients = ingredientsByRecipe.get(row.id) || []
@@ -308,6 +474,7 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
       tags,
       source: row.source,
       visibility: row.visibility,
+      estimatedMinutes: row.estimatedMinutes,
       matchedOn: fallback.matchedOn.length ? fallback.matchedOn : ['title'],
       snippet: buildSnippet(
         {
@@ -323,43 +490,63 @@ async function searchWithFts(options: SearchOptions): Promise<RecipeSearchResult
     })
   }
 
-  return finalizeSearchResults(
+  return applyFavoriteBoost(
     results.sort((a, b) => b.score - a.score),
-    options
+    scope,
+    favoriteRecipeIds
   )
 }
 
-async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchResult[]> {
-  const limit = options.limit ?? 20
-  const terms = options.query.toLowerCase().split(/\s+/).filter(Boolean)
+async function searchWithFallbackFiltered(
+  query: string,
+  whereClause: SQL,
+  scope: 'all' | 'favorites',
+  favoriteRecipeIds?: string[]
+): Promise<RecipeSearchResult[]> {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   if (!terms.length) return []
 
-  const restrictToRecipeIds = getRestrictToRecipeIds(options)
-  if (restrictToRecipeIds && restrictToRecipeIds.length === 0) {
-    return []
-  }
+  const recipes = await db.all(sql`
+    SELECT
+      r.id,
+      r.title,
+      r.description,
+      r.image_url AS imageUrl,
+      r.tags,
+      r.source,
+      r.visibility,
+      r.estimated_minutes AS estimatedMinutes,
+      r.steps,
+      r.author_id AS authorId
+    FROM recipes r
+    WHERE ${whereClause}
+  `) as Array<{
+    id: string
+    title: string
+    description: string | null
+    imageUrl: string | null
+    tags: string | string[] | null
+    source: string | null
+    visibility: string
+    estimatedMinutes: number | null
+    steps: string | Array<{ title: string; content: string }> | null
+    authorId: string | null
+  }>
 
-  const conditions = []
-  if (!options.signedIn) {
-    conditions.push(eq(schema.recipes.visibility, 'public'))
-  }
-  if (restrictToRecipeIds?.length) {
-    conditions.push(inArray(schema.recipes.id, restrictToRecipeIds))
-  }
-
-  let recipeQuery = db.select().from(schema.recipes)
-  if (conditions.length) {
-    recipeQuery = recipeQuery.where(and(...conditions))
-  }
-
-  const recipes = await recipeQuery
   const ingredientsByRecipe = await loadIngredientNamesByRecipe(recipes.map((recipe) => recipe.id))
   const contributors = await loadContributorNames(
     recipes.map((recipe) => recipe.authorId).filter(Boolean) as string[]
   )
+
   const results: RecipeSearchResult[] = []
 
   for (const recipe of recipes) {
+    const tags = parseTagsField(recipe.tags)
+    const steps = Array.isArray(recipe.steps)
+      ? recipe.steps
+      : typeof recipe.steps === 'string'
+        ? JSON.parse(recipe.steps || '[]')
+        : []
     const ingredients = ingredientsByRecipe.get(recipe.id) || []
     const contributor = recipe.authorId ? (contributors.get(recipe.authorId) || '') : ''
 
@@ -367,9 +554,9 @@ async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchR
       {
         title: recipe.title,
         description: recipe.description,
-        tags: recipe.tags || [],
+        tags,
         source: recipe.source,
-        steps: recipe.steps || [],
+        steps,
         contributor,
         ingredients
       },
@@ -383,9 +570,10 @@ async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchR
       title: recipe.title,
       description: recipe.description,
       imageUrl: recipe.imageUrl,
-      tags: recipe.tags || [],
+      tags,
       source: recipe.source,
       visibility: recipe.visibility,
+      estimatedMinutes: recipe.estimatedMinutes,
       matchedOn,
       snippet: buildSnippet(
         {
@@ -393,7 +581,7 @@ async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchR
           description: recipe.description,
           source: recipe.source,
           ingredients,
-          tags: recipe.tags || []
+          tags
         },
         matchedOn
       ),
@@ -401,7 +589,84 @@ async function searchWithFallback(options: SearchOptions): Promise<RecipeSearchR
     })
   }
 
-  return finalizeSearchResults(results, options)
+  return applyFavoriteBoost(
+    results.sort((a, b) => b.score - a.score),
+    scope,
+    favoriteRecipeIds
+  )
+}
+
+async function queryTextSearchRecipes(
+  query: string,
+  whereClause: SQL,
+  page: number,
+  pageSize: number,
+  signedIn: boolean,
+  scope: 'all' | 'favorites',
+  favoriteRecipeIds?: string[]
+): Promise<PaginatedRecipeSearchResults> {
+  const allowedIds = await getFilteredRecipeIds(whereClause)
+
+  const ftsAvailable = await isRecipeFtsAvailable()
+  let results: RecipeSearchResult[] = []
+
+  if (ftsAvailable) {
+    try {
+      results = await searchWithFtsFiltered(query, allowedIds, signedIn, scope, favoriteRecipeIds)
+    } catch {
+      results = []
+    }
+  }
+
+  if (!ftsAvailable || results.length === 0) {
+    results = await searchWithFallbackFiltered(query, whereClause, scope, favoriteRecipeIds)
+  }
+
+  const total = results.length
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0
+  const safePage = clampSearchPage(page, totalPages)
+  const offset = (safePage - 1) * pageSize
+
+  return {
+    items: results.slice(offset, offset + pageSize),
+    page: safePage,
+    pageSize,
+    total,
+    totalPages
+  }
+}
+
+export async function queryRecipeSearch(options: QueryRecipeSearchOptions): Promise<PaginatedRecipeSearchResults> {
+  const filters = options.filters || EMPTY_FILTERS
+  const pageSize = Math.min(Math.max(options.pageSize ?? 12, 1), 12)
+  const page = Math.max(1, Number(options.page) || 1)
+  const scope = options.scope || 'all'
+  const query = String(options.query || '').trim()
+  const restrictToRecipeIds = getRestrictToRecipeIds(scope, options.favoriteRecipeIds)
+
+  if (restrictToRecipeIds && restrictToRecipeIds.length === 0) {
+    return emptyPaginatedSearchResults(pageSize)
+  }
+
+  const whereClause = combineWhere(buildBaseWhereClauses(
+    options.signedIn,
+    restrictToRecipeIds,
+    filters
+  ))
+
+  if (query.length < 2) {
+    return queryBrowseRecipes(whereClause, page, pageSize)
+  }
+
+  return queryTextSearchRecipes(
+    query,
+    whereClause,
+    page,
+    pageSize,
+    options.signedIn,
+    scope,
+    options.favoriteRecipeIds
+  )
 }
 
 export async function searchRecipes(options: SearchOptions): Promise<RecipeSearchResult[]> {
@@ -411,6 +676,7 @@ export async function searchRecipes(options: SearchOptions): Promise<RecipeSearc
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
   const scope = options.scope || 'all'
   const favoritesFingerprint = options.favoritesFingerprint || 'none'
+
   const cacheVersion = await getSearchCacheVersion()
   const cacheKey = buildSearchCacheKey(
     cacheVersion,
@@ -423,25 +689,20 @@ export async function searchRecipes(options: SearchOptions): Promise<RecipeSearc
   const cached = await getCachedSearchResults<RecipeSearchResult[]>(cacheKey)
   if (cached) return cached
 
-  const ftsAvailable = await isRecipeFtsAvailable()
-  let results: RecipeSearchResult[] = []
+  const result = await queryRecipeSearch({
+    query: trimmed,
+    filters: EMPTY_FILTERS,
+    page: 1,
+    pageSize: limit,
+    signedIn: options.signedIn,
+    scope,
+    favoriteRecipeIds: options.favoriteRecipeIds,
+    favoritesFingerprint
+  })
 
-  if (ftsAvailable) {
-    try {
-      results = await searchWithFts({ ...options, limit })
-    } catch {
-      results = []
-    }
+  if (result.items.length > 0) {
+    await setCachedSearchResults(cacheKey, result.items)
   }
 
-  // FTS can exist but be empty/unindexed after migration, or throw on MATCH.
-  // Fall back to LIKE search so site search / Humphry still return recipes.
-  if (!ftsAvailable || results.length === 0) {
-    results = await searchWithFallback({ ...options, limit })
-  }
-
-  if (results.length > 0) {
-    await setCachedSearchResults(cacheKey, results)
-  }
-  return results
+  return result.items
 }
