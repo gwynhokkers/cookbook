@@ -48,5 +48,3 @@ export function recipeMatchesTagFilter(recipeTags: string[] | null | undefined, 
   const normalized = new Set((recipeTags || []).map((t) => t.toLowerCase()))
   return filterTags.some((t) => normalized.has(t.toLowerCase()))
 }
-
-export { DIET_TAGS, TIME_FILTERS }
