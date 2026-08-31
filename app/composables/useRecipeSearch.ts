@@ -1,10 +1,10 @@
 import { refDebounced } from '@vueuse/core'
-import type { RecipeSearchResult } from '~~/shared/utils/recipeSearchTypes'
+import type { PaginatedRecipeSearchResults } from '~~/shared/utils/recipeSearchTypes'
 
 export function useRecipeSearchQuery(searchTerm: Ref<string>) {
   const debouncedTerm = refDebounced(searchTerm, 200)
   const loading = ref(false)
-  const results = ref<RecipeSearchResult[]>([])
+  const results = ref<PaginatedRecipeSearchResults['items']>([])
 
   watch(debouncedTerm, async (term) => {
     const trimmed = term.trim()
@@ -16,9 +16,10 @@ export function useRecipeSearchQuery(searchTerm: Ref<string>) {
 
     loading.value = true
     try {
-      results.value = await $fetch<RecipeSearchResult[]>('/api/recipes/search', {
-        query: { q: trimmed, scope: 'all' }
+      const response = await $fetch<PaginatedRecipeSearchResults>('/api/recipes/search', {
+        query: { q: trimmed, scope: 'all', limit: 8, page: 1 }
       })
+      results.value = response.items
     } catch {
       results.value = []
     } finally {

@@ -64,25 +64,32 @@
       </div>
     </template>
 
-    <template v-if="recipe.source" #footer>
-      <RecipeSource
-        :source="recipe.source"
-        size="sm"
-        :linkable="false"
-      />
+    <template v-if="recipe.source || timeLabel" #footer>
+      <div class="flex flex-wrap items-center gap-2">
+        <RecipeSource
+          v-if="recipe.source"
+          :source="recipe.source"
+          size="sm"
+          :linkable="false"
+        />
+        <span v-if="timeLabel" class="text-xs text-muted">{{ timeLabel }}</span>
+      </div>
     </template>
   </UPageCard>
 </template>
 
 <script setup lang="ts">
 import type { RecipeSummary } from '~~/shared/utils/recipeListTypes'
+import { formatEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   recipe: RecipeSummary
   showFavorite?: boolean
 }>(), {
   showFavorite: true
 })
+
+const timeLabel = computed(() => formatEstimatedMinutes(props.recipe.estimatedMinutes ?? null))
 
 const emit = defineEmits<{
   'favorite-changed': []

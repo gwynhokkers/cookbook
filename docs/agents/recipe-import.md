@@ -45,6 +45,8 @@ For **each** recipe JSON file, compare to the source page markdown and confirm:
 - Method steps are complete sentences in cooking order — no table separators, flavor tags, or stray quantities as steps.
 - Sub-recipes on the same page are merged or split intentionally (document in `carry-forwards.json` if deferred).
 - `source`, `visibility: private`, and tags are correct.
+- `estimatedMinutes` set (extract from OCR or reasonable estimate).
+- Diet tag (`vegan`, `vegetarian`, or `pescatarian`) when applicable — most specific only.
 
 ## Audit gate (enforced)
 

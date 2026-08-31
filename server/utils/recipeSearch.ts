@@ -47,8 +47,6 @@ export interface QueryRecipeSearchOptions {
 const FAVORITE_SEARCH_BOOST = 75
 const EMPTY_FILTERS: RecipeSearchFilters = { tags: [], sources: [], diet: [], time: null }
 
-export { clampSearchPage }
-
 function getRestrictToRecipeIds(scope: 'all' | 'favorites', favoriteRecipeIds?: string[]) {
   if (scope === 'favorites') {
     return favoriteRecipeIds || []
