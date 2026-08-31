@@ -2,9 +2,10 @@
 import { createRecipe, manageUsers as manageUsersAbility } from '~~/shared/utils/abilities'
 
 const { header } = useAppConfig()
-const { open: searchOpen } = useAppSearch()
+const router = useRouter()
 const { loggedIn, user, clear } = useUserSession()
 const menuOpen = ref(false)
+const headerSearch = ref('')
 
 const role = computed(() => (user.value as Record<string, unknown>)?.role as string | undefined)
 
@@ -26,9 +27,15 @@ const userAvatar = computed(() => (user.value as Record<string, unknown>)?.image
 
 const menuButtonClass = 'w-full justify-start px-3'
 
-function openSearch() {
+function submitHeaderSearch() {
+  const q = headerSearch.value.trim()
   menuOpen.value = false
-  searchOpen.value = true
+  if (!q) {
+    router.push('/search')
+    return
+  }
+  router.push({ path: '/search', query: { q } })
+  headerSearch.value = ''
 }
 
 async function handleSignOut() {
@@ -57,14 +64,18 @@ async function handleSignOut() {
     </template>
 
     <template #default>
-      <UButton
-        icon="i-lucide-search"
-        label="Search"
-        variant="outline"
-        color="neutral"
-        class="hidden md:inline-flex"
-        @click="openSearch"
-      />
+      <form
+        class="hidden min-w-0 flex-1 md:block md:max-w-sm lg:max-w-md"
+        @submit.prevent="submitHeaderSearch"
+      >
+        <UInput
+          v-model="headerSearch"
+          icon="i-lucide-search"
+          placeholder="Search recipes..."
+          aria-label="Search recipes"
+          size="md"
+        />
+      </form>
     </template>
 
     <template #right>
@@ -102,7 +113,7 @@ async function handleSignOut() {
         color="neutral"
         aria-label="Search recipes"
         class="md:hidden"
-        @click="openSearch"
+        to="/search"
       />
     </template>
 
@@ -118,7 +129,8 @@ async function handleSignOut() {
             icon="i-lucide-search"
             variant="ghost"
             color="neutral"
-            @click="openSearch"
+            to="/search"
+            @click="menuOpen = false"
           >
             Search recipes
           </UButton>

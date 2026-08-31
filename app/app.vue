@@ -17,8 +17,6 @@ useSeoMeta({
   twitterCard: 'summary_large_image'
 })
 
-const { open: searchOpen, term: searchTerm } = useAppSearch()
-const { loading, groups } = useRecipeSearchQuery(searchTerm)
 </script>
 
 <template>
@@ -26,13 +24,6 @@ const { loading, groups } = useRecipeSearchQuery(searchTerm)
     <NuxtLoadingIndicator />
 
     <AppHeader />
-
-    <UDashboardSearch
-      v-model:open="searchOpen"
-      v-model:search-term="searchTerm"
-      :groups="groups"
-      :loading="loading"
-    />
 
     <UMain>
       <NuxtLayout>
