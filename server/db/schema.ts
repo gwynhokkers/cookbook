@@ -10,6 +10,7 @@ export const recipes = sqliteTable('recipes', {
   tags: text('tags', { mode: 'json' }).$type<string[]>().default([]),
   source: text('source'),
   servings: integer('servings'),
+  estimatedMinutes: integer('estimated_minutes'),
   steps: text('steps', { mode: 'json' }).$type<Array<{ title: string; content: string }>>().default([]),
   visibility: text('visibility').notNull().default('public'),
   authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),

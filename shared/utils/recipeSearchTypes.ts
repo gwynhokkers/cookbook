@@ -18,6 +18,25 @@ export interface RecipeSearchResult {
   matchedOn: SearchMatchField[]
   snippet?: string
   score: number
+  estimatedMinutes?: number | null
+}
+
+export interface PaginatedRecipeSearchResults {
+  items: RecipeSearchResult[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export function emptyPaginatedSearchResults(pageSize = 12): PaginatedRecipeSearchResults {
+  return {
+    items: [],
+    page: 1,
+    pageSize,
+    total: 0,
+    totalPages: 0
+  }
 }
 
 export const SEARCH_MATCH_LABELS: Record<SearchMatchField, string> = {
