@@ -63,3 +63,11 @@ Canonical roles map 1:1 to `needs-triage`, `needs-info`, `ready-for-agent`, `rea
 ### Domain docs
 
 Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### Recipe import (cookbook OCR → production)
+
+**Read `docs/agents/recipe-import.md` before any import work.**
+
+- Review JSON **per recipe** against OCR — never bulk-generate or upload raw structure output.
+- Run `audit-recipes.mjs` before `upload.mjs` (upload enforces `review-pass.json`).
+- Max ~20 recipes / ~15 pages per batch. Never use `upload.mjs --force` unless the user asks.

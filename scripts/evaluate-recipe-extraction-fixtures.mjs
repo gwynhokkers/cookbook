@@ -1,25 +1,24 @@
+/**
+ * Evaluate extraction fixtures through the real Normalize module (not shadow heuristics).
+ * Run with: bun scripts/evaluate-recipe-extraction-fixtures.mjs [--enforce]
+ */
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { normalizeExtractedRecipe } from '../server/extraction/normalize.ts'
+import {
+  getExtractionQualityScore,
+  hasMeaningfulExtraction
+} from '../server/extraction/structure.ts'
 
 const fixturesDir = path.resolve(process.cwd(), 'scripts/extraction-fixtures')
 
 const canonicalUnits = new Set(['cups', 'tbsp', 'tsp', 'grams', 'kg', 'oz', 'lb', 'ml', 'l', 'pieces'])
 
-const hasLetters = (value) => /[a-z]/i.test(value || '')
 const isReferenceLike = (value) => /\(?see\s+pages?\s+\d+/i.test(value || '') || /\(?see\s+page\s+\d+/i.test(value || '')
-const isBadIngredientName = (value) => {
-  const name = String(value || '').trim()
-  if (!name || !hasLetters(name)) return true
-  if (isReferenceLike(name)) return true
-  if (/^[().,\-/\d\s]+$/.test(name)) return true
-  return false
-}
-
-const normalizeUnit = (value) => String(value || '').trim().toLowerCase()
 
 const evaluateFixture = (fixture) => {
-  const ingredients = Array.isArray(fixture?.output?.ingredients) ? fixture.output.ingredients : []
-  const parseSuccess = Boolean(fixture?.output && typeof fixture.output === 'object')
+  const normalized = normalizeExtractedRecipe(fixture?.output || {})
+  const ingredients = Array.isArray(normalized.ingredients) ? normalized.ingredients : []
 
   let validNames = 0
   let canonicalUnitsCount = 0
@@ -27,8 +26,8 @@ const evaluateFixture = (fixture) => {
 
   for (const ingredient of ingredients) {
     const name = String(ingredient?.ingredientName || '')
-    const unit = normalizeUnit(ingredient?.unit)
-    if (!isBadIngredientName(name)) validNames++
+    const unit = String(ingredient?.unit || '').trim().toLowerCase()
+    if (name && /[a-z]/i.test(name) && !isReferenceLike(name)) validNames++
     if (canonicalUnits.has(unit)) canonicalUnitsCount++
     if (isReferenceLike(name)) referenceInNameCount++
   }
@@ -36,8 +35,10 @@ const evaluateFixture = (fixture) => {
   const total = ingredients.length || 1
   return {
     fixture: fixture.name || 'unnamed-fixture',
-    parseSuccess,
+    parseSuccess: hasMeaningfulExtraction(normalized),
+    qualityScore: getExtractionQualityScore(normalized),
     ingredientCount: ingredients.length,
+    stepCount: normalized.steps?.length || 0,
     validIngredientNameRate: Number((validNames / total).toFixed(3)),
     canonicalUnitRate: Number((canonicalUnitsCount / total).toFixed(3)),
     referenceInNameRate: Number((referenceInNameCount / total).toFixed(3))
@@ -48,7 +49,6 @@ const main = async () => {
   const enforce = process.argv.includes('--enforce')
   const files = await readdir(fixturesDir)
   const jsonFiles = files.filter(file => file.endsWith('.json'))
-  // Negative fixtures (bad model output) are kept for documentation; exclude from --enforce thresholds.
   const filesToEvaluate = enforce
     ? jsonFiles.filter(file => !file.includes('inconsistent'))
     : jsonFiles

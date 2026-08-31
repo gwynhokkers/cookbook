@@ -5,10 +5,11 @@
   "scripts": {
     "build": "nuxt build",
     "patch-wrangler": "node scripts/patch-wrangler-d1-migrations.mjs",
-    "evaluate:extraction": "node scripts/evaluate-recipe-extraction-fixtures.mjs",
-    "evaluate:extraction:enforce": "node scripts/evaluate-recipe-extraction-fixtures.mjs --enforce",
+    "evaluate:extraction": "bun scripts/evaluate-recipe-extraction-fixtures.mjs",
+    "evaluate:extraction:enforce": "bun scripts/evaluate-recipe-extraction-fixtures.mjs --enforce",
     "import:ocr": "node scripts/recipe-import/ocr.mjs",
     "import:structure": "node scripts/recipe-import/structure_recipes.mjs",
+    "import:audit": "node scripts/recipe-import/audit-recipes.mjs",
     "import:upload": "node scripts/recipe-import/upload.mjs",
     "sync:pull": "node scripts/recipe-sync/pull.mjs",
     "sync:load": "node scripts/recipe-sync/load.mjs",

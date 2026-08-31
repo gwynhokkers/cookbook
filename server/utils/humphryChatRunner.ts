@@ -11,7 +11,7 @@ import type { H3Event } from 'h3'
 import { HUMPHRY_SYSTEM_PROMPT } from './humphryPrompt'
 import { createHumphryTools } from './humphryTools'
 import { appendAssistantMessage } from './humphrySessions'
-import { getWorkersAiModel } from './workersAiModel'
+import { getWorkersAi } from './workersAi'
 
 function findToolOutcome(
   step: {
@@ -46,6 +46,10 @@ function findToolOutcome(
   return { kind: 'missing' as const }
 }
 
+/**
+ * Humphry turn: messages in → UI stream out (persists assistant message).
+ * Route owns auth; this module owns model, tools, and stream reconstruction.
+ */
 export async function createHumphryChatResponse(
   event: H3Event,
   uiMessages: UIMessage[],
@@ -53,7 +57,7 @@ export async function createHumphryChatResponse(
   sessionId: string
 ) {
   const config = useRuntimeConfig(event)
-  const model = getWorkersAiModel(event, String(config.humphryModel))
+  const model = getWorkersAi(event).languageModel(String(config.humphryModel))
   const maxSteps = Number(config.humphryMaxToolSteps || 8)
   const tools = createHumphryTools(event, userId)
 

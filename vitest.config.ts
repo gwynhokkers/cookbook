@@ -1,5 +1,8 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { defineVitestProject } from '@nuxt/test-utils/config'
+
+const root = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
   test: {
@@ -11,9 +14,15 @@ export default defineConfig({
     },
     projects: [
       {
+        resolve: {
+          alias: {
+            '~~': root,
+            '@@': root
+          }
+        },
         test: {
           name: 'unit',
-          include: ['tests/shared/**/*.{test,spec}.ts', 'tests/server/**/*.{test,spec}.ts'],
+          include: ['tests/shared/**/*.{test,spec}.ts', 'tests/server/**/*.{test,spec}.ts', 'tests/scripts/**/*.{test,spec}.ts'],
           environment: 'node'
         }
       },

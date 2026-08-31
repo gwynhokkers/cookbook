@@ -67,7 +67,7 @@ async function loadRecipeDetails(recipeId: string, event: H3Event) {
     .limit(1)
 
   if (!rows.length) {
-    return { error: 'Recipe not found' }
+    return { error: 'Recipe not found', recipes: [] as HumphryRecipeSummary[] }
   }
 
   await authorize(event, viewRecipe, rows[0])
@@ -83,12 +83,16 @@ async function loadRecipeDetails(recipeId: string, event: H3Event) {
     .orderBy(sql`CAST(${schema.recipeIngredients.order} AS INTEGER)`)
 
   const steps = rows[0].steps || []
-
-  return {
+  const summary = toSummary({
     id: rows[0].id,
     title: rows[0].title,
     description: rows[0].description,
-    tags: rows[0].tags || [],
+    imageUrl: rows[0].imageUrl,
+    tags: rows[0].tags
+  })
+
+  return {
+    recipes: [summary],
     source: rows[0].source,
     stepCount: steps.length,
     ingredients: ingredients.map(row => ({
@@ -97,6 +101,22 @@ async function loadRecipeDetails(recipeId: string, event: H3Event) {
       unit: row.unit
     }))
   }
+}
+
+function toRecipeCards(recipes: Array<{
+  id: string
+  title: string
+  description: string | null
+  imageUrl: string | null
+  tags?: string[] | null
+}>): HumphryRecipeSummary[] {
+  return recipes.map(row => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    imageUrl: row.imageUrl,
+    tags: row.tags || []
+  }))
 }
 
 export function createHumphryTools(event: H3Event, userId: string) {
@@ -175,7 +195,7 @@ export function createHumphryTools(event: H3Event, userId: string) {
           listDate: list.listDate,
           status: list.status,
           pageUrl: `/shopping-list?date=${list.listDate}`,
-          recipes: list.recipes,
+          recipes: toRecipeCards(list.recipes),
           itemCount: list.items.length,
           items: list.items.map(item => ({
             name: item.name,
@@ -211,7 +231,7 @@ export function createHumphryTools(event: H3Event, userId: string) {
         return {
           listDate: updated.listDate,
           pageUrl: `/shopping-list?date=${updated.listDate}`,
-          recipes: updated.recipes,
+          recipes: toRecipeCards(updated.recipes),
           status: updated.status
         }
       }
@@ -244,7 +264,8 @@ export function createHumphryTools(event: H3Event, userId: string) {
           status: generated.status,
           warning: generated.warning || null,
           pageUrl: `/shopping-list?date=${generated.listDate}`,
-          recipes: generated.recipes.map(r => r.title),
+          // Card envelope: full recipe summaries. Titles alone are not cardable.
+          recipes: toRecipeCards(generated.recipes),
           aisles: [...byAisle.entries()].map(([aisle, items]) => ({ aisle, items })),
           copyText: formatShoppingListCopyText(generated)
         }

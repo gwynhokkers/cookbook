@@ -41,7 +41,7 @@ const { seo } = useAppConfig()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const submitting = ref(false)
+const { submitting, updateRecipe } = useRecipeSave()
 
 // Get the recipe ID from route params
 const recipeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
@@ -58,23 +58,8 @@ if (error.value) {
 }
 
 const handleSubmit = async (data: any) => {
-  submitting.value = true
   try {
-    // Extract ingredients from data
-    const ingredients = data.ingredients || []
-    delete data.ingredients
-
-    const validIngredients = selectValidIngredients(ingredients)
-    await enrichIngredientsViaParse(validIngredients)
-
-    // Update recipe
-    await $fetch(`/api/recipes/${recipeId}`, {
-      method: 'PUT',
-      body: data,
-      credentials: 'include'
-    })
-
-    await syncRecipeIngredients(recipeId as string, validIngredients)
+    await updateRecipe(recipeId as string, data)
 
     toast.add({
       title: 'Recipe updated',
@@ -89,8 +74,6 @@ const handleSubmit = async (data: any) => {
       title: 'Unable to update recipe',
       description: error?.data?.statusMessage || error?.message || 'Please try again in a moment.'
     })
-  } finally {
-    submitting.value = false
   }
 }
 

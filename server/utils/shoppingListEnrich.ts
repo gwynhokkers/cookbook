@@ -6,7 +6,7 @@ import {
   type AmalgamatedIngredient,
   type ShoppingListAisle
 } from '~~/shared/utils/shoppingListTypes'
-import { getWorkersAiModel } from './workersAiModel'
+import { getWorkersAi } from './workersAi'
 
 export type EnrichedShoppingItem = AmalgamatedIngredient & {
   aisle: ShoppingListAisle | null
@@ -75,7 +75,7 @@ async function requestEnrichment(
   amalgamated: AmalgamatedIngredient[]
 ): Promise<EnrichedShoppingItem[]> {
   const config = useRuntimeConfig(event)
-  const model = getWorkersAiModel(event, String(config.humphryModel))
+  const model = getWorkersAi(event).languageModel(String(config.humphryModel))
 
   const payload = amalgamated.map(item => ({
     ingredientId: item.ingredientId,

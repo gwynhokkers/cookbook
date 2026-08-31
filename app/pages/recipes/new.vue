@@ -23,7 +23,7 @@ definePageMeta({
 
 const router = useRouter();
 const toast = useToast();
-const submitting = ref(false);
+const { submitting, createRecipe } = useRecipeSave();
 
 // Avoid focusing the first form input (e.g. ingredient) on initial navigation
 onMounted(() => {
@@ -37,22 +37,8 @@ onMounted(() => {
 });
 
 const handleSubmit = async (data: any) => {
-  submitting.value = true;
   try {
-    // Extract ingredients from data
-    const ingredients = data.ingredients || [];
-    delete data.ingredients;
-
-    const validIngredients = selectValidIngredients(ingredients);
-    await enrichIngredientsViaParse(validIngredients);
-
-    // Create recipe first
-    const recipe = await $fetch("/api/recipes", {
-      method: "POST",
-      body: data,
-    });
-
-    await linkIngredients(recipe.id, validIngredients);
+    const recipe = await createRecipe(data);
 
     toast.add({
       title: "Recipe created",
@@ -72,8 +58,6 @@ const handleSubmit = async (data: any) => {
         error?.message ||
         "Please check the form and try again.",
     });
-  } finally {
-    submitting.value = false;
   }
 };
 

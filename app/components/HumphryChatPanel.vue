@@ -68,37 +68,19 @@ function extractRecipesFromMessage(message: UIMessage): HumphryRecipeSummary[] {
       continue;
     }
 
-    const toolName = getToolName(part);
-    if (
-      ![
-        "search_recipes",
-        "list_favorites",
-        "get_recipe_details",
-        "generate_shopping_list",
-        "get_shopping_list",
-        "set_shopping_list_recipes",
-      ].includes(toolName)
-    ) {
-      continue;
-    }
+    const output = part.output as { recipes?: unknown } | undefined;
+    const list = Array.isArray(output?.recipes) ? output.recipes : [];
 
-    const output = part.output as Record<string, unknown> | undefined;
-    if (!output) {
-      continue;
-    }
-
-    const list = Array.isArray(output.recipes)
-      ? (output.recipes as HumphryRecipeSummary[])
-      : output.id
-        ? [output as unknown as HumphryRecipeSummary]
-        : [];
-
-    for (const recipe of list) {
-      if (recipe?.id && !seen.has(recipe.id)) {
+    for (const entry of list) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const recipe = entry as Partial<HumphryRecipeSummary>;
+      if (recipe.id && !seen.has(recipe.id)) {
         seen.add(recipe.id);
         recipes.push({
           id: recipe.id,
-          title: recipe.title,
+          title: recipe.title || "Untitled",
           description: recipe.description ?? null,
           imageUrl: recipe.imageUrl ?? null,
           tags: recipe.tags || [],
