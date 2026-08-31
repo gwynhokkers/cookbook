@@ -49,4 +49,15 @@ describe('auditRecipe', () => {
     const issues = auditRecipe({ ...base, source: '' })
     expect(issues.some((i) => i.code === 'missing-source')).toBe(true)
   })
+
+  it('warns but passes when estimatedMinutes is missing', () => {
+    const issues = auditRecipe(base)
+    expect(issues.some((i) => i.code === 'missing-estimated-minutes')).toBe(true)
+    expect(auditPassed(issues)).toBe(true)
+  })
+
+  it('does not warn when estimatedMinutes is set', () => {
+    const issues = auditRecipe({ ...base, estimatedMinutes: 45 })
+    expect(issues.some((i) => i.code === 'missing-estimated-minutes')).toBe(false)
+  })
 })

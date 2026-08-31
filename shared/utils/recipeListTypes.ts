@@ -7,6 +7,7 @@ export interface RecipeSummary {
   tags: string[] | null
   source: string | null
   visibility: string
+  estimatedMinutes?: number | null
 }
 
 export interface PaginatedRecipes {

@@ -128,6 +128,10 @@
           </UBadge>
         </div>
         <RecipeSource v-if="recipe?.source" :source="recipe.source" />
+        <p v-if="timeLabel" class="flex items-center gap-1.5 text-sm text-muted">
+          <UIcon name="i-lucide-clock" class="size-4" />
+          {{ timeLabel }}
+        </p>
       </div>
     </div>
     <USeparator />
@@ -189,6 +193,7 @@
 import type { ContentTocLink } from "@nuxt/ui/runtime/components/content/ContentToc.vue";
 import { editRecipe as editRecipeAbility } from "~~/shared/utils/abilities";
 import { formatIngredientLine } from "~~/shared/utils/formatIngredient";
+import { formatEstimatedMinutes } from "~~/shared/utils/formatEstimatedMinutes";
 
 const { seo } = useAppConfig();
 const route = useRoute();
@@ -268,6 +273,10 @@ if (error.value) {
     statusMessage: "Recipe not found",
   });
 }
+
+const timeLabel = computed(() =>
+  formatEstimatedMinutes(recipe.value?.estimatedMinutes ?? null),
+);
 
 // Load recipe ingredients
 const { data: recipeIngredients } = await useFetch(

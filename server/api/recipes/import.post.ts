@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import { and, eq } from 'drizzle-orm'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
 import { normalizeServingsForStorage } from '~~/shared/utils/parseServings'
+import { normalizeEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
 import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 interface ImportIngredient {
@@ -19,6 +20,7 @@ interface ImportBody {
   source?: string
   visibility?: string
   servings?: number
+  estimatedMinutes?: number | null
   steps?: Array<{ title?: string; content?: string }>
   ingredients?: ImportIngredient[]
 }
@@ -128,6 +130,7 @@ export default defineEventHandler(async (event) => {
     tags,
     source,
     servings: normalizeServingsForStorage(body?.servings),
+    estimatedMinutes: normalizeEstimatedMinutes(body?.estimatedMinutes),
     steps,
     visibility,
     authorId: null,
