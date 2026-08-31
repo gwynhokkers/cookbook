@@ -139,7 +139,7 @@
         <div class="space-y-3">
           <div class="flex flex-wrap gap-2">
             <UBadge
-              v-for="(tag, index) in state.tags"
+              v-for="(tag, index) in state.tags.filter((t) => !isDietTag(t))"
               :key="`${tag}-${index}`"
               color="primary"
               variant="subtle"
@@ -174,6 +174,36 @@
               Add tag
             </UButton>
           </div>
+        </div>
+      </UFormField>
+
+      <UFormField label="Estimated time (minutes)" name="estimatedMinutes">
+        <UInput
+          v-model.number="state.estimatedMinutes"
+          type="number"
+          min="1"
+          max="1440"
+          placeholder="e.g. 45"
+          class="max-w-xs"
+        />
+        <p v-if="estimatedMinutesPreview" class="mt-1 text-sm text-muted">
+          {{ estimatedMinutesPreview }}
+        </p>
+      </UFormField>
+
+      <UFormField label="Diet">
+        <div class="flex flex-wrap gap-4">
+          <label
+            v-for="diet in DIET_TAGS"
+            :key="diet"
+            class="inline-flex items-center gap-2 text-sm"
+          >
+            <UCheckbox
+              :model-value="selectedDietTags.includes(diet)"
+              @update:model-value="(checked) => toggleDietTag(diet, Boolean(checked))"
+            />
+            {{ dietLabel(diet) }}
+          </label>
         </div>
       </UFormField>
     </div>
@@ -337,6 +367,8 @@ import {
   createRowId
 } from '~/utils/recipeFormRows'
 import { formatIngredientLine } from '~~/shared/utils/formatIngredient'
+import { DIET_TAGS, applyDietTagSelection, isDietTag, type DietTag } from '~~/shared/utils/dietTags'
+import { formatEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
 import type { IngredientRowModel } from './IngredientRow.vue'
 
 const props = defineProps<{
@@ -361,6 +393,10 @@ const schema = z.object({
   servings: z.preprocess(
     (val) => (val === '' || val === undefined ? null : val),
     z.union([z.null(), z.coerce.number().int().positive()])
+  ).optional().nullable(),
+  estimatedMinutes: z.preprocess(
+    (val) => (val === '' || val === undefined ? null : val),
+    z.union([z.null(), z.coerce.number().int().min(1).max(1440)])
   ).optional().nullable(),
   ingredients: z.array(z.object({
     lineText: z.string().optional(),
@@ -433,6 +469,7 @@ const state = reactive({
   source: props.recipe?.source || '',
   visibility: (props.recipe?.visibility as 'public' | 'private') || 'public',
   servings: props.recipe?.servings ?? null,
+  estimatedMinutes: props.recipe?.estimatedMinutes ?? null,
   ingredients: [] as IngredientRowModel[],
   steps: Array.isArray(props.recipe?.steps)
     ? props.recipe.steps.map((step: { title?: string; content?: string }) => ({
@@ -457,6 +494,25 @@ onMounted(async () => {
 
 const newTag = ref('')
 const selectedFile = ref<any>(null)
+
+const selectedDietTags = computed({
+  get: () => DIET_TAGS.filter((d) => state.tags.some((t) => t.toLowerCase() === d)),
+  set: (next: DietTag[]) => { state.tags = applyDietTagSelection(state.tags, next) }
+})
+
+const estimatedMinutesPreview = computed(() => formatEstimatedMinutes(state.estimatedMinutes))
+
+function toggleDietTag(diet: DietTag, checked: boolean) {
+  const current = selectedDietTags.value
+  const next = checked
+    ? [...current.filter((d) => d !== diet), diet]
+    : current.filter((d) => d !== diet)
+  selectedDietTags.value = next
+}
+
+function dietLabel(diet: DietTag) {
+  return diet.charAt(0).toUpperCase() + diet.slice(1)
+}
 const uploadingFile = ref(false)
 const uploadError = ref<string | null>(null)
 const uploadCompressionNote = ref<string | null>(null)
@@ -487,7 +543,7 @@ const applyPrefillPatch = (patch: RecipePrefillPatch) => {
 const addTag = () => {
   const normalized = newTag.value.trim().replace(/\s+/g, ' ')
   const hasDuplicate = state.tags.some(tag => tag.toLowerCase() === normalized.toLowerCase())
-  if (normalized && !hasDuplicate) {
+  if (normalized && !hasDuplicate && !isDietTag(normalized)) {
     state.tags.push(normalized)
     newTag.value = ''
   }
@@ -611,6 +667,7 @@ const onSubmit = async (event: any) => {
     imageUrl: state.imageUrl,
     visibility: state.visibility,
     servings: state.servings,
+    estimatedMinutes: state.estimatedMinutes,
     tags: state.tags,
     ingredients: ingredientsForSubmit,
     steps: stepsForSubmit

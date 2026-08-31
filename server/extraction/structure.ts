@@ -344,6 +344,8 @@ const STRUCTURE_PROMPT_PREFIX = `Given this cookbook transcript, return one JSON
 Split ingredients into amount, unit, ingredientName, and notes fields.
 Split the method into steps with plain instruction text in each step's content field.
 Do not invent text that is not present in the transcript.
+- estimatedMinutes: total time in minutes (prep + cook). Extract from printed times when present; otherwise estimate from steps (include resting/marinating).
+- tags: include ONE diet tag when confident (vegan, vegetarian, or pescatarian — most specific only). Omit when uncertain or not applicable.
 Transcript:
 `
 

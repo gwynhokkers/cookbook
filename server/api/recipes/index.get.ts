@@ -11,7 +11,8 @@ const recipeSummaryFields = {
   date: schema.recipes.date,
   tags: schema.recipes.tags,
   source: schema.recipes.source,
-  visibility: schema.recipes.visibility
+  visibility: schema.recipes.visibility,
+  estimatedMinutes: schema.recipes.estimatedMinutes
 }
 
 export default defineEventHandler(async (event) => {

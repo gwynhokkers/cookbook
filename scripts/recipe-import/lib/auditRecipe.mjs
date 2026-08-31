@@ -11,7 +11,7 @@ const QUANTITY_ONLY_STEP =
 
 const METHOD_VERB = /\b(Put|Add|Heat|Mix|Stir|Cook|Serve|Blend|Season|Pour|Cover|Remove|Preheat|Knead|Sift|Whisk|Fry|Simmer|Bake|Roast|Marinate|Combine|Divide|Shape|Turn|Reduce|Bring|Lower|Adjust|Garnish|Transfer|Slice|Chop|Dice|Cut|Place|Leave|Set aside|Meanwhile|When|Once|Until|Allow|Spread|Roll|Score|Slide|Sprinkle|Knock back)\b/i
 
-/** @typedef {{ code: string, message: string, detail?: string }} AuditIssue */
+/** @typedef {{ code: string, message: string, detail?: string, severity?: 'error' | 'warning' }} AuditIssue */
 
 /**
  * @param {unknown} recipe
@@ -37,6 +37,24 @@ export function auditRecipe(recipe, filename = '') {
   if (!source) issues.push({ code: 'missing-source', message: `${prefix}missing source` })
   if (!steps?.length) issues.push({ code: 'no-steps', message: `${prefix}no steps` })
   if (!ingredients?.length) issues.push({ code: 'no-ingredients', message: `${prefix}no ingredients` })
+
+  if (r.estimatedMinutes == null || r.estimatedMinutes === '') {
+    issues.push({
+      code: 'missing-estimated-minutes',
+      severity: 'warning',
+      message: `${prefix}missing estimatedMinutes`
+    })
+  }
+
+  const tags = Array.isArray(r.tags) ? r.tags.map((t) => String(t).toLowerCase()) : []
+  const hasDiet = tags.some((t) => ['vegetarian', 'vegan', 'pescatarian'].includes(t))
+  if (!hasDiet) {
+    issues.push({
+      code: 'missing-diet-tag',
+      severity: 'warning',
+      message: `${prefix}no diet tag (ok for meat/fish recipes)`
+    })
+  }
 
   if (steps) {
     const seen = new Set()
@@ -127,5 +145,5 @@ export function auditRecipe(recipe, filename = '') {
  * @returns {boolean}
  */
 export function auditPassed(issues) {
-  return issues.length === 0
+  return !issues.some((i) => (i.severity || 'error') === 'error')
 }

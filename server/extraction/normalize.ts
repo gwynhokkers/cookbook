@@ -1,5 +1,6 @@
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
 import { parseServings } from '~~/shared/utils/parseServings'
+import { normalizeEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
 import type { ExtractedRecipe } from './types'
 
 /**
@@ -563,7 +564,8 @@ export function normalizeExtractedRecipe(data: any): ExtractedRecipe {
     ingredients: [],
     steps: [],
     tags: Array.isArray(data.tags) ? data.tags.filter((t: any) => typeof t === 'string') : [],
-    imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl.trim() : undefined
+    imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl.trim() : undefined,
+    estimatedMinutes: normalizeEstimatedMinutes(data.estimatedMinutes) ?? undefined
   }
 
   // Normalize ingredients

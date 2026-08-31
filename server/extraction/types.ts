@@ -15,6 +15,7 @@ export interface ExtractedRecipe {
   source?: string
   imageUrl?: string
   servings?: number
+  estimatedMinutes?: number
 }
 
 export interface TranscribedRecipeText {
@@ -78,7 +79,8 @@ export const RECIPE_RESPONSE_SCHEMA = {
       type: 'array',
       maxItems: 30,
       items: { type: 'string', maxLength: 80 }
-    }
+    },
+    estimatedMinutes: { type: 'number' }
   },
   required: ['title', 'description', 'ingredients', 'steps', 'tags']
 }

@@ -7,3 +7,10 @@ export function formatEstimatedMinutes(minutes: number | null | undefined): stri
   if (mins === 0) return `${hours}h`
   return `${hours}h ${mins}m`
 }
+
+export function normalizeEstimatedMinutes(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return Math.min(1440, Math.max(1, Math.round(n)))
+}

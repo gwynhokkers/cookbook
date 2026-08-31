@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import { createRecipe } from '~~/shared/utils/abilities'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
 import { normalizeServingsForStorage } from '~~/shared/utils/parseServings'
+import { normalizeEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
 import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
 
 export default defineEventHandler(async (event) => {
@@ -10,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event)
   const body = await readBody(event)
 
-  const { title, description, imageUrl, date, tags, source, steps, visibility, servings } = body
+  const { title, description, imageUrl, date, tags, source, steps, visibility, servings, estimatedMinutes } = body
 
   if (!title) {
     throw createError({
@@ -31,6 +32,7 @@ export default defineEventHandler(async (event) => {
     tags: tags || [],
     source: source || null,
     servings: normalizeServingsForStorage(servings),
+    estimatedMinutes: normalizeEstimatedMinutes(estimatedMinutes),
     steps: steps || [],
     visibility: visibility === 'private' ? 'private' : 'public',
     authorId: (session.user as Record<string, unknown>).id as string,
