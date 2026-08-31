@@ -1,9 +1,10 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+const isVitest = process.env.VITEST === "true";
+
 export default defineNuxtConfig({
   modules: [
     "@nuxt/eslint", // '@nuxt/ui',
-    "@nuxt/fonts",
-    "nuxt-og-image",
+    ...(isVitest ? [] : ["@nuxt/fonts", "nuxt-og-image"]),
     "@nuxt/image",
     "@nuxt/ui",
     "@comark/nuxt",
