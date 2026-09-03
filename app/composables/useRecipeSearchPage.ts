@@ -71,7 +71,7 @@ export function useRecipeSearchPage() {
     JSON.stringify(filters.value)
   ].join('|'))
 
-  const { data, pending } = useAsyncData(
+  const { data, pending, error } = useAsyncData(
     () => `recipe-search-${fetchKey.value}`,
     () => $fetch<PaginatedRecipeSearchResults>('/api/recipes/search', {
       query: {
@@ -116,6 +116,7 @@ export function useRecipeSearchPage() {
     hasActiveFilters: computed(() => hasActiveFilters(filters.value) || effectiveQuery.value.length >= 2),
     data,
     pending,
+    error,
     items,
     total,
     totalPages,

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
+import { eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { db, schema } from '../db'
 import { parseRecipeSource } from '~~/shared/utils/formatRecipeSource'
 import {
@@ -46,12 +46,46 @@ export interface QueryRecipeSearchOptions {
 
 const FAVORITE_SEARCH_BOOST = 75
 const EMPTY_FILTERS: RecipeSearchFilters = { tags: [], sources: [], diet: [], time: null }
+/** D1 allows 100 bound parameters per query; stay under that for IN (...) lists. */
+const D1_IN_CHUNK = 80
+
+function chunkList<T>(items: T[], size = D1_IN_CHUNK): T[][] {
+  if (!items.length) return []
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+function sqlIn(columnSql: SQL, values: string[]): SQL {
+  const parts = chunkList(values).map((chunk) =>
+    sql`${columnSql} IN (${sql.join(chunk.map((value) => sql`${value}`), sql`, `)})`
+  )
+  if (parts.length === 1) return parts[0]!
+  return sql.join(parts.map((part) => sql`(${part})`), sql` OR `)
+}
 
 function getRestrictToRecipeIds(scope: 'all' | 'favorites', favoriteRecipeIds?: string[]) {
   if (scope === 'favorites') {
     return favoriteRecipeIds || []
   }
   return undefined
+}
+
+function parseStepsField(
+  steps: string | Array<{ title: string; content: string }> | null | undefined
+): Array<{ title: string; content: string }> {
+  if (Array.isArray(steps)) return steps
+  if (typeof steps === 'string') {
+    try {
+      const parsed = JSON.parse(steps || '[]')
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
 }
 
 function parseTagsField(tags: string | string[] | null | undefined): string[] {
@@ -78,7 +112,7 @@ function buildBaseWhereClauses(
   }
 
   if (restrictToRecipeIds?.length) {
-    clauses.push(sql`r.id IN (${sql.join(restrictToRecipeIds.map((id) => sql`${id}`), sql`, `)})`)
+    clauses.push(sqlIn(sql`r.id`, restrictToRecipeIds))
   }
 
   const tagsClause = buildJsonTagsOrMatchSql(sql`r.tags`, filters.tags)
@@ -122,18 +156,20 @@ async function loadIngredientNamesByRecipe(recipeIds: string[]) {
   const map = new Map<string, string[]>()
   if (!recipeIds.length) return map
 
-  const rows = await db.select({
-    recipeId: schema.recipeIngredients.recipeId,
-    name: schema.ingredients.name
-  })
-    .from(schema.recipeIngredients)
-    .innerJoin(schema.ingredients, eq(schema.recipeIngredients.ingredientId, schema.ingredients.id))
-    .where(inArray(schema.recipeIngredients.recipeId, recipeIds))
+  for (const chunk of chunkList(recipeIds)) {
+    const rows = await db.select({
+      recipeId: schema.recipeIngredients.recipeId,
+      name: schema.ingredients.name
+    })
+      .from(schema.recipeIngredients)
+      .innerJoin(schema.ingredients, eq(schema.recipeIngredients.ingredientId, schema.ingredients.id))
+      .where(inArray(schema.recipeIngredients.recipeId, chunk))
 
-  for (const row of rows) {
-    const current = map.get(row.recipeId) || []
-    current.push(row.name)
-    map.set(row.recipeId, current)
+    for (const row of rows) {
+      const current = map.get(row.recipeId) || []
+      current.push(row.name)
+      map.set(row.recipeId, current)
+    }
   }
 
   return map
@@ -144,15 +180,17 @@ async function loadContributorNames(authorIds: string[]) {
   const uniqueIds = [...new Set(authorIds.filter(Boolean))]
   if (!uniqueIds.length) return map
 
-  const rows = await db.select({
-    id: schema.users.id,
-    name: schema.users.name
-  })
-    .from(schema.users)
-    .where(inArray(schema.users.id, uniqueIds))
+  for (const chunk of chunkList(uniqueIds)) {
+    const rows = await db.select({
+      id: schema.users.id,
+      name: schema.users.name
+    })
+      .from(schema.users)
+      .where(inArray(schema.users.id, chunk))
 
-  for (const row of rows) {
-    map.set(row.id, row.name || '')
+    for (const row of rows) {
+      map.set(row.id, row.name || '')
+    }
   }
 
   return map
@@ -342,15 +380,6 @@ async function queryBrowseRecipes(
   }
 }
 
-async function getFilteredRecipeIds(whereClause: SQL): Promise<string[]> {
-  const rows = await db.all(sql`
-    SELECT r.id
-    FROM recipes r
-    WHERE ${whereClause}
-  `) as Array<{ id: string }>
-  return rows.map((row) => row.id)
-}
-
 function applyFavoriteBoost(
   results: RecipeSearchResult[],
   scope: 'all' | 'favorites',
@@ -372,23 +401,12 @@ function applyFavoriteBoost(
 
 async function searchWithFtsFiltered(
   query: string,
-  allowedIds: string[] | null,
-  signedIn: boolean,
+  whereClause: SQL,
   scope: 'all' | 'favorites',
   favoriteRecipeIds?: string[]
 ): Promise<RecipeSearchResult[]> {
   const ftsQuery = toFtsQuery(query)
   if (!ftsQuery) return []
-
-  if (allowedIds && allowedIds.length === 0) return []
-
-  const visibilityClause = signedIn
-    ? sql`1 = 1`
-    : sql`r.visibility = 'public'`
-
-  const idFilter = allowedIds?.length
-    ? sql`AND recipes_fts.recipe_id IN (${sql.join(allowedIds.map((id) => sql`${id}`), sql`, `)})`
-    : sql``
 
   const rows = await db.all(sql`
     SELECT
@@ -404,8 +422,7 @@ async function searchWithFtsFiltered(
     FROM recipes_fts
     JOIN recipes r ON recipes_fts.recipe_id = r.id
     WHERE recipes_fts MATCH ${ftsQuery}
-      AND ${visibilityClause}
-      ${idFilter}
+      AND ${whereClause}
     ORDER BY rank
     LIMIT 500
   `) as Array<{
@@ -424,14 +441,14 @@ async function searchWithFtsFiltered(
   const recipeIds = rows.map((row) => row.id)
 
   const recipeRowsById = new Map<string, { steps: Array<{ title: string; content: string }> | null, authorId: string | null }>()
-  if (recipeIds.length) {
+  for (const chunk of chunkList(recipeIds)) {
     const recipeMeta = await db.select({
       id: schema.recipes.id,
       steps: schema.recipes.steps,
       authorId: schema.recipes.authorId
     })
       .from(schema.recipes)
-      .where(inArray(schema.recipes.id, recipeIds))
+      .where(inArray(schema.recipes.id, chunk))
 
     for (const recipe of recipeMeta) {
       recipeRowsById.set(recipe.id, { steps: recipe.steps, authorId: recipe.authorId })
@@ -540,11 +557,7 @@ async function searchWithFallbackFiltered(
 
   for (const recipe of recipes) {
     const tags = parseTagsField(recipe.tags)
-    const steps = Array.isArray(recipe.steps)
-      ? recipe.steps
-      : typeof recipe.steps === 'string'
-        ? JSON.parse(recipe.steps || '[]')
-        : []
+    const steps = parseStepsField(recipe.steps)
     const ingredients = ingredientsByRecipe.get(recipe.id) || []
     const contributor = recipe.authorId ? (contributors.get(recipe.authorId) || '') : ''
 
@@ -599,25 +612,26 @@ async function queryTextSearchRecipes(
   whereClause: SQL,
   page: number,
   pageSize: number,
-  signedIn: boolean,
   scope: 'all' | 'favorites',
   favoriteRecipeIds?: string[]
 ): Promise<PaginatedRecipeSearchResults> {
-  const allowedIds = await getFilteredRecipeIds(whereClause)
-
   const ftsAvailable = await isRecipeFtsAvailable()
   let results: RecipeSearchResult[] = []
 
   if (ftsAvailable) {
     try {
-      results = await searchWithFtsFiltered(query, allowedIds, signedIn, scope, favoriteRecipeIds)
+      results = await searchWithFtsFiltered(query, whereClause, scope, favoriteRecipeIds)
     } catch {
       results = []
     }
   }
 
   if (!ftsAvailable || results.length === 0) {
-    results = await searchWithFallbackFiltered(query, whereClause, scope, favoriteRecipeIds)
+    try {
+      results = await searchWithFallbackFiltered(query, whereClause, scope, favoriteRecipeIds)
+    } catch {
+      results = results.length ? results : []
+    }
   }
 
   const total = results.length
@@ -661,7 +675,6 @@ export async function queryRecipeSearch(options: QueryRecipeSearchOptions): Prom
     whereClause,
     page,
     pageSize,
-    options.signedIn,
     scope,
     options.favoriteRecipeIds
   )

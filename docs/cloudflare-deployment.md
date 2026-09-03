@@ -99,7 +99,7 @@ The app does not run migrations at build time (`applyMigrationsDuringBuild: fals
 With **Cloudflare Pages**, Nitro generates the worker config at `dist/_worker.js/wrangler.json`. Use:
 
 ```bash
-bun install && bun run build && node scripts/patch-wrangler-d1-migrations.mjs && npx wrangler d1 migrations apply DB --remote --config dist/_worker.js/wrangler.json
+bun install && bun run build && bun run patch-wrangler && bunx wrangler d1 migrations apply DB --remote --config dist/_worker.js/wrangler.json
 ```
 
 The patch script finds and patches whichever wrangler config exists (`dist/_worker.js/wrangler.json`, `dist/wrangler.json`, or `.output/wrangler.json`). The migrations command must use the same path; for a standard Pages deploy it is `dist/_worker.js/wrangler.json`.

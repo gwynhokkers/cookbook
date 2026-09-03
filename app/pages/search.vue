@@ -90,6 +90,10 @@
             Loading...
           </div>
 
+          <p v-else-if="error" class="text-sm text-muted">
+            Search failed. Try again, or browse with filters.
+          </p>
+
           <template v-else>
             <p class="text-sm text-muted">
               {{ total }} result{{ total === 1 ? '' : 's' }}
@@ -165,6 +169,7 @@ const {
   queryInput,
   effectiveQuery,
   pending,
+  error,
   items,
   total,
   totalPages,
