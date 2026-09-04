@@ -1,6 +1,5 @@
 import {
   enrichIngredientsViaParse,
-  linkIngredients,
   selectValidIngredients,
   syncRecipeIngredients,
   type FormIngredient
@@ -27,7 +26,8 @@ export interface SavedRecipe {
 
 /**
  * Shared create/update flow: validate ingredients, enrich via Spoonacular parse,
- * persist recipe metadata, then link or sync recipe_ingredient rows.
+ * then persist. Create sends recipe + ingredients in one request; update still
+ * syncs ingredient links separately until PersistRecipe replace ships.
  */
 export function useRecipeSave() {
   const submitting = ref(false)
@@ -42,17 +42,24 @@ export function useRecipeSave() {
     submitting.value = true
     try {
       const ingredients = data.ingredients || []
-      const recipeBody = { ...data }
-      delete recipeBody.ingredients
-
       const validIngredients = await prepareIngredients(ingredients)
 
       const recipe = await $fetch<SavedRecipe>('/api/recipes', {
         method: 'POST',
-        body: recipeBody
+        body: {
+          ...data,
+          ingredients: validIngredients.map(ing => ({
+            ingredientName: ing.ingredientName,
+            amount: ing.amount,
+            unit: ing.unit,
+            notes: ing.notes || null,
+            ingredientId: ing.ingredientId,
+            spoonacularIngredientId: ing.spoonacularIngredientId,
+            spoonacularData: ing.spoonacularData
+          }))
+        }
       })
 
-      await linkIngredients(recipe.id, validIngredients)
       return recipe
     } finally {
       submitting.value = false

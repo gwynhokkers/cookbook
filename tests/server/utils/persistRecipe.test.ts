@@ -31,6 +31,8 @@ describe('normalizePersistIngredients', () => {
         unit: 'pieces',
         notes: null,
         ingredientId: undefined,
+        spoonacularIngredientId: undefined,
+        spoonacularData: undefined,
         order: '0'
       },
       {
@@ -39,6 +41,8 @@ describe('normalizePersistIngredients', () => {
         unit: 'tbsp',
         notes: 'melted',
         ingredientId: undefined,
+        spoonacularIngredientId: undefined,
+        spoonacularData: undefined,
         order: '2'
       }
     ])
@@ -54,9 +58,26 @@ describe('normalizePersistIngredients', () => {
         unit: 'tsp',
         notes: null,
         ingredientId: 'ing_1',
+        spoonacularIngredientId: undefined,
+        spoonacularData: undefined,
         order: '0'
       }
     ])
+  })
+
+  it('normalizes spoonacular fields', () => {
+    expect(normalizePersistIngredients([
+      {
+        ingredientName: 'flour',
+        amount: '100',
+        unit: 'grams',
+        spoonacularIngredientId: 20081,
+        spoonacularData: { name: 'wheat flour' }
+      }
+    ])[0]).toMatchObject({
+      spoonacularIngredientId: '20081',
+      spoonacularData: { name: 'wheat flour' }
+    })
   })
 })
 

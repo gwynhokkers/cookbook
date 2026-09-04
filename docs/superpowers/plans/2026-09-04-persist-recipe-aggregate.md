@@ -230,12 +230,13 @@ Do **not** defer FTS row upsert itself (search correctness per recipe); only def
 - Modify: `server/api/recipes/index.post.ts` — accept optional `ingredients: PersistIngredientInput[]` (by name and/or id)
 - Modify: `app/composables/useRecipeSave.ts` — POST ingredients in body; remove `linkIngredients` on create
 - Keep `linkIngredients` for any legacy callers until grep is clean
+- Extend PersistIngredient with optional Spoonacular fields so UI create keeps nutrition
 
 **Auth:** unchanged (`authorize(createRecipe)` + session `authorId`).
 
-- [ ] **Step 1: Extend index.post body; call `persistRecipe.create` with `authorId`**
+- [x] **Step 1: Extend index.post body; call `persistRecipe.create` with `authorId`**
 
-- [ ] **Step 2: Update `useRecipeSave.createRecipe` to send ingredients once**
+- [x] **Step 2: Update `useRecipeSave.createRecipe` to send ingredients once**
 
 Still run `enrichIngredientsViaParse` client-side before POST (Spoonacular stays outside PersistRecipe for now — pass resolved names/ids).
 

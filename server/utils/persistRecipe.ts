@@ -9,6 +9,7 @@ import { upsertRecipeSearchDocument } from './recipeSearchIndex'
 import {
   normalizePersistIngredients,
   normalizePersistSteps,
+  type NormalizedPersistIngredient,
   type PersistIngredientInput
 } from './persistRecipeNormalize'
 
@@ -23,6 +24,8 @@ export type PersistRecipeCreateInput = {
   steps?: Array<{ title?: string; content?: string }>
   visibility: 'public' | 'private'
   authorId?: string | null
+  /** Display name for FTS contributor field when known (e.g. session user name). */
+  contributor?: string | null
   date?: Date
   ingredients?: PersistIngredientInput[]
 }
@@ -45,6 +48,23 @@ export type PersistLinkedIngredient = {
   unit: string
 }
 
+export type PersistRecipeRow = {
+  id: string
+  title: string
+  description: string | null
+  imageUrl: string | null
+  date: Date
+  tags: string[]
+  source: string | null
+  servings: number | null
+  estimatedMinutes: number | null
+  steps: Array<{ title: string; content: string }>
+  visibility: 'public' | 'private'
+  authorId: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
 export type PersistRecipeCreateResult = {
   skipped: boolean
   id: string
@@ -54,14 +74,44 @@ export type PersistRecipeCreateResult = {
   ingredientCount: number
   stepCount: number
   linked?: PersistLinkedIngredient[]
+  recipe?: PersistRecipeRow
+}
+
+type IngredientRef = { id: string; name: string }
+
+async function applySpoonacularUpdate(
+  ingredientId: string,
+  row: NormalizedPersistIngredient
+) {
+  if (row.spoonacularIngredientId === undefined && row.spoonacularData === undefined) {
+    return
+  }
+  const updateData: {
+    updatedAt: Date
+    spoonacularIngredientId?: string | null
+    spoonacularData?: Record<string, unknown> | null
+  } = { updatedAt: new Date() }
+  if (row.spoonacularIngredientId !== undefined) {
+    updateData.spoonacularIngredientId = row.spoonacularIngredientId
+  }
+  if (row.spoonacularData !== undefined) {
+    updateData.spoonacularData = row.spoonacularData
+  }
+  await db.update(schema.ingredients)
+    .set(updateData)
+    .where(eq(schema.ingredients.id, ingredientId))
 }
 
 async function findOrCreateIngredientByName(
-  name: string,
-  cache: Map<string, { id: string; name: string }>
-) {
+  row: NormalizedPersistIngredient,
+  cache: Map<string, IngredientRef>
+): Promise<IngredientRef> {
+  const name = row.ingredientName
   const cached = cache.get(name)
-  if (cached) return cached
+  if (cached) {
+    await applySpoonacularUpdate(cached.id, row)
+    return cached
+  }
 
   const existing = await db.select({
     id: schema.ingredients.id,
@@ -72,6 +122,7 @@ async function findOrCreateIngredientByName(
     .limit(1)
 
   if (existing[0]) {
+    await applySpoonacularUpdate(existing[0].id, row)
     cache.set(name, existing[0])
     return existing[0]
   }
@@ -82,8 +133,8 @@ async function findOrCreateIngredientByName(
   await db.insert(schema.ingredients).values({
     id,
     name,
-    spoonacularIngredientId: null,
-    spoonacularData: null,
+    spoonacularIngredientId: row.spoonacularIngredientId ?? null,
+    spoonacularData: row.spoonacularData ?? null,
     createdAt: now,
     updatedAt: now
   })
@@ -121,6 +172,11 @@ export async function createPersistRecipe(
     : []
   const steps = normalizePersistSteps(input.steps)
   const ingredientRows = normalizePersistIngredients(input.ingredients)
+  const description = input.description ? String(input.description).trim() : null
+  const imageUrl = input.imageUrl || null
+  const servings = normalizeServingsForStorage(input.servings)
+  const estimatedMinutes = normalizeEstimatedMinutes(input.estimatedMinutes)
+  const authorId = input.authorId ?? null
 
   if (options.skipIfDuplicateSourceTitle && source) {
     const duplicates = await db.select({
@@ -151,29 +207,31 @@ export async function createPersistRecipe(
   const recipeId = nanoid()
   const now = input.date ?? new Date()
 
-  await db.insert(schema.recipes).values({
+  const recipe: PersistRecipeRow = {
     id: recipeId,
     title,
-    description: input.description ? String(input.description).trim() : null,
-    imageUrl: input.imageUrl || null,
+    description,
+    imageUrl,
     date: now,
     tags,
     source,
-    servings: normalizeServingsForStorage(input.servings),
-    estimatedMinutes: normalizeEstimatedMinutes(input.estimatedMinutes),
+    servings,
+    estimatedMinutes,
     steps,
     visibility,
-    authorId: input.authorId ?? null,
+    authorId,
     createdAt: now,
     updatedAt: now
-  })
+  }
 
-  const nameCache = new Map<string, { id: string; name: string }>()
+  await db.insert(schema.recipes).values(recipe)
+
+  const nameCache = new Map<string, IngredientRef>()
   const linked: PersistLinkedIngredient[] = []
   const ingredientNames: string[] = []
 
   for (const row of ingredientRows) {
-    let ingredient: { id: string; name: string }
+    let ingredient: IngredientRef
 
     if (row.ingredientId) {
       const byId = await db.select({
@@ -191,9 +249,10 @@ export async function createPersistRecipe(
         })
       }
       ingredient = byId[0]
+      await applySpoonacularUpdate(ingredient.id, row)
       nameCache.set(ingredient.name, ingredient)
     } else {
-      ingredient = await findOrCreateIngredientByName(row.ingredientName, nameCache)
+      ingredient = await findOrCreateIngredientByName(row, nameCache)
     }
 
     const recipeIngredientId = nanoid()
@@ -222,12 +281,12 @@ export async function createPersistRecipe(
   const doc = buildRecipeSearchDocumentFromAggregate({
     recipeId,
     title,
-    description: input.description ? String(input.description).trim() : null,
+    description,
     tags,
     source,
     steps,
     ingredientNames,
-    contributor: ''
+    contributor: input.contributor || ''
   })
 
   await upsertRecipeSearchDocument(doc, {
@@ -242,6 +301,7 @@ export async function createPersistRecipe(
     visibility,
     ingredientCount: linked.length,
     stepCount: steps.length,
-    linked
+    linked,
+    recipe
   }
 }
