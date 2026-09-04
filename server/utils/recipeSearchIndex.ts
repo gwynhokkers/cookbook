@@ -1,19 +1,9 @@
 import { eq, sql } from 'drizzle-orm'
 import { db, schema } from '../db'
-import { parseRecipeSource } from '~~/shared/utils/formatRecipeSource'
-
-export interface RecipeSearchDocument {
-  recipeId: string
-  title: string
-  description: string
-  tags: string
-  source: string
-  book: string
-  author: string
-  ingredients: string
-  steps: string
-  contributor: string
-}
+import {
+  buildRecipeSearchDocumentFromAggregate,
+  type RecipeSearchDocument
+} from './recipeSearchDocument'
 
 let ftsAvailable: boolean | null = null
 
@@ -61,24 +51,16 @@ export async function buildRecipeSearchDocument(recipeId: string): Promise<Recip
     contributor = userRows[0]?.name || ''
   }
 
-  const parsedSource = parseRecipeSource(recipe.source)
-  const steps = (recipe.steps || [])
-    .map((step) => `${step.title || ''} ${step.content || ''}`.trim())
-    .filter(Boolean)
-    .join(' ')
-
-  return {
+  return buildRecipeSearchDocumentFromAggregate({
     recipeId: recipe.id,
     title: recipe.title,
-    description: recipe.description || '',
-    tags: (recipe.tags || []).join(' '),
-    source: recipe.source || '',
-    book: parsedSource?.book || '',
-    author: parsedSource?.author || '',
-    ingredients: ingredientRows.map((row) => row.name).join(' '),
-    steps,
+    description: recipe.description,
+    tags: recipe.tags,
+    source: recipe.source,
+    steps: recipe.steps,
+    ingredientNames: ingredientRows.map((row) => row.name),
     contributor
-  }
+  })
 }
 
 async function upsertFtsDocument(doc: RecipeSearchDocument) {
@@ -103,6 +85,18 @@ async function upsertFtsDocument(doc: RecipeSearchDocument) {
   `)
 }
 
+export async function upsertRecipeSearchDocument(
+  doc: RecipeSearchDocument,
+  options?: { invalidateCache?: boolean }
+) {
+  if (!(await checkFtsAvailable())) return
+
+  await upsertFtsDocument(doc)
+  if (options?.invalidateCache !== false) {
+    await invalidateSearchCache()
+  }
+}
+
 export async function syncRecipeSearchIndex(recipeId: string) {
   if (!(await checkFtsAvailable())) return
 
@@ -112,8 +106,7 @@ export async function syncRecipeSearchIndex(recipeId: string) {
     return
   }
 
-  await upsertFtsDocument(doc)
-  await invalidateSearchCache()
+  await upsertRecipeSearchDocument(doc)
 }
 
 export async function deleteRecipeSearchIndex(recipeId: string) {

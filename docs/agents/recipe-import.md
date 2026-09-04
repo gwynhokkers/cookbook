@@ -66,6 +66,7 @@ node scripts/recipe-import/upload.mjs --book curry --run 5
 - One recipe per request; default **8 second** delay (`--delay-ms` to adjust).
 - Stops on **503 / 502 / 1102** — do not retry in a tight loop; wait and resume with `--limit`.
 - Import API **skips** duplicates on `title + source` — it does **not** update bad recipes. Delete via D1/wrangler before reimporting fixes.
+- Server path: `import.post` uses `createPersistRecipe` (recipe + ingredients + FTS in one module). That cuts D1 chatter vs the old per-ingredient re-select / post-write FTS rebuild, but **does not** replace pacing — still max ~20 recipes per run and wait between runs if production feels hot.
 
 ## End-of-batch summary (required)
 

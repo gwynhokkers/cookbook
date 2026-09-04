@@ -35,11 +35,16 @@ function parseArgs(argv) {
   return args
 }
 
+/** Natural sort so Ayla_1_p2 comes before Ayla_1_p10. */
+function naturalCompare(a, b) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+}
+
 async function listImages(dir) {
   const names = await readdir(dir)
   const images = names.filter((name) => IMAGE_EXT.has(path.extname(name).toLowerCase()))
-  const imgSeq = images.filter((n) => /^IMG/i.test(n)).sort()
-  const named = images.filter((n) => !/^IMG/i.test(n)).sort()
+  const imgSeq = images.filter((n) => /^IMG/i.test(n)).sort(naturalCompare)
+  const named = images.filter((n) => !/^IMG/i.test(n)).sort(naturalCompare)
   // Sequential camera scans first (book order), named dish shots last.
   return [...imgSeq, ...named]
 }
