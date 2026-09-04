@@ -1,10 +1,20 @@
-import { db, schema } from '../../db'
-import { eq } from 'drizzle-orm'
 import { editRecipe } from '~~/shared/utils/abilities'
-import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
-import { normalizeServingsForStorage } from '~~/shared/utils/parseServings'
-import { normalizeEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
-import { syncRecipeSearchIndex } from '../../utils/recipeSearchIndex'
+import { updatePersistRecipe } from '../../utils/persistRecipe'
+import type { PersistIngredientInput } from '../../utils/persistRecipeNormalize'
+
+function mapIngredients(ingredients: unknown): PersistIngredientInput[] | undefined {
+  if (ingredients === undefined) return undefined
+  if (!Array.isArray(ingredients)) return []
+  return ingredients.map((ing: Record<string, unknown>) => ({
+    ingredientName: ing.ingredientName != null ? String(ing.ingredientName) : undefined,
+    amount: ing.amount as string | number | undefined,
+    unit: ing.unit != null ? String(ing.unit) : undefined,
+    notes: ing.notes != null ? String(ing.notes) : null,
+    ingredientId: ing.ingredientId != null ? String(ing.ingredientId) : undefined,
+    spoonacularIngredientId: ing.spoonacularIngredientId as string | number | null | undefined,
+    spoonacularData: (ing.spoonacularData as Record<string, unknown> | null | undefined) ?? undefined
+  }))
+}
 
 export default defineEventHandler(async (event) => {
   await authorize(event, editRecipe)
@@ -19,49 +29,42 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const existing = await db.select()
-    .from(schema.recipes)
-    .where(eq(schema.recipes.id, id))
-    .limit(1)
+  const user = session.user as Record<string, unknown>
+  const {
+    title,
+    description,
+    imageUrl,
+    date,
+    tags,
+    source,
+    steps,
+    visibility,
+    servings,
+    estimatedMinutes,
+    ingredients
+  } = body
 
-  if (!existing || existing.length === 0) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Recipe not found'
-    })
-  }
+  const result = await updatePersistRecipe(
+    id,
+    {
+      title,
+      description,
+      imageUrl,
+      date: date !== undefined ? new Date(date) : undefined,
+      tags,
+      source,
+      steps,
+      visibility: visibility === undefined
+        ? undefined
+        : (visibility === 'private' ? 'private' : 'public'),
+      servings,
+      estimatedMinutes,
+      claimAuthorId: user.id as string,
+      contributor: typeof user.name === 'string' ? user.name : '',
+      ingredients: mapIngredients(ingredients)
+    },
+    { invalidateSearchCache: true }
+  )
 
-  const { title, description, imageUrl, date, tags, source, steps, visibility, servings, estimatedMinutes } = body
-
-  const updateData: Record<string, unknown> = {
-    updatedAt: new Date()
-  }
-
-  if (existing[0].authorId === null) {
-    updateData.authorId = (session.user as Record<string, unknown>).id
-  }
-
-  if (title !== undefined) updateData.title = toRecipeTitleCase(String(title).trim())
-  if (description !== undefined) updateData.description = description
-  if (imageUrl !== undefined) updateData.imageUrl = imageUrl
-  if (date !== undefined) updateData.date = new Date(date)
-  if (tags !== undefined) updateData.tags = tags
-  if (source !== undefined) updateData.source = source
-  if (servings !== undefined) updateData.servings = normalizeServingsForStorage(servings)
-  if (estimatedMinutes !== undefined) updateData.estimatedMinutes = normalizeEstimatedMinutes(estimatedMinutes)
-  if (steps !== undefined) updateData.steps = steps
-  if (visibility !== undefined) updateData.visibility = visibility === 'private' ? 'private' : 'public'
-
-  await db.update(schema.recipes)
-    .set(updateData)
-    .where(eq(schema.recipes.id, id))
-
-  const updated = await db.select()
-    .from(schema.recipes)
-    .where(eq(schema.recipes.id, id))
-    .limit(1)
-
-  await syncRecipeSearchIndex(id)
-
-  return updated[0]
+  return result.recipe
 })

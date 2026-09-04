@@ -252,33 +252,26 @@ git commit -m "feat(recipes): create recipe with ingredients in one request"
 
 ### Task 5 (later): Update path + ingredient routes
 
+**Design (locked for PR D):** **Full replace** when `ingredients` is present on PUT (including `[]`). Omit `ingredients` for metadata-only. No patch/diff of link rows in PersistRecipe — form save always sends the full list.
+
 **Files:**
-- `persistRecipe.replaceIngredients` or `updateAggregate`
+- `persistRecipe.updatePersistRecipe`
 - `useRecipeSave.updateRecipe` → single PUT with ingredients
 - `server/api/recipes/[id].put.ts`
-- Eventually: ingredient POST/PUT/DELETE either call thin persist helpers or remain for granular edits but share FTS upsert
+- Granular ingredient POST/PUT/DELETE keep `syncRecipeSearchIndex(recipeId)`
 
-**Defer until Tasks 1–4 ship** — update path is more conflict-prone (partial edits, Spoonacular ids). Granular ingredient routes can keep `syncRecipeSearchIndex(recipeId)` short-term.
-
-- [ ] **Step 1: Design replace-ingredients semantics** (full replace vs patch) in a short ADR or plan addendum before coding
-- [ ] **Step 2: Implement + migrate `syncRecipeIngredients` client**
+- [x] **Step 1: Design replace-ingredients semantics** (full replace vs patch) in a short ADR or plan addendum before coding
+- [x] **Step 2: Implement + migrate `syncRecipeIngredients` client**
 - [ ] **Step 3: Commit**
 
 ---
 
 ### Task 6: Verification & docs
 
-- [ ] **Step 1: Grep for `syncRecipeSearchIndex` — document remaining call sites** (ingredient CRUD, migrate, put)
-
-- [ ] **Step 2: Update `scripts/recipe-import/README.md`** — note cheaper import path; still recommend ≤20 recipes/run and delay; no back-to-back mega uploads
-
+- [x] **Step 1: Grep for `syncRecipeSearchIndex` — document remaining call sites** (ingredient CRUD, migrate, put)
+- [x] **Step 2: Update `scripts/recipe-import/README.md`** — note cheaper import path; still recommend ≤20 recipes/run and delay; no back-to-back mega uploads
 - [ ] **Step 3: Run `bun run test` for new tests; `bun run typecheck` if feasible**
-
 - [ ] **Step 4: Commit docs**
-
-```bash
-git commit -m "docs: PersistRecipe aggregate write and import pacing"
-```
 
 ---
 

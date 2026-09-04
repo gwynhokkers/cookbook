@@ -104,3 +104,11 @@ describe('persist aggregate → FTS document', () => {
     expect(doc.steps).toContain('Mix.')
   })
 })
+
+describe('update ingredient replace semantics', () => {
+  it('normalizes an explicit empty list to zero rows (full clear)', () => {
+    // Callers distinguish omit (`ingredients` undefined → metadata-only) from
+    // `ingredients: []` (delete all links) at the PersistRecipe API layer.
+    expect(normalizePersistIngredients([])).toEqual([])
+  })
+})
