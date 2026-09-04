@@ -66,6 +66,23 @@ node scripts/recipe-import/upload.mjs --book curry --run 5
 - One recipe per request; default **8 second** delay (`--delay-ms` to adjust).
 - Stops on **503 / 502 / 1102** — do not retry in a tight loop; wait and resume with `--limit`.
 - Import API **skips** duplicates on `title + source` — it does **not** update bad recipes. Delete via D1/wrangler before reimporting fixes.
+- Server path: `import.post` uses `createPersistRecipe` (recipe + ingredients + FTS in one module). That cuts D1 chatter vs the old per-ingredient re-select / post-write FTS rebuild, but **does not** replace pacing — still max ~20 recipes per run and wait between runs if production feels hot.
+
+## PersistRecipe + FTS ownership
+
+Interactive create/update go through `createPersistRecipe` / `updatePersistRecipe` (`server/utils/persistRecipe.ts`). Update uses **full replace** of `recipe_ingredients` when the request body includes `ingredients` (including `[]`); omit the key for metadata-only updates.
+
+`syncRecipeSearchIndex(recipeId)` remains on these call sites (reload-from-DB FTS):
+
+| Call site | Why |
+|-----------|-----|
+| `updatePersistRecipe` metadata-only branch | Links unchanged; rebuild doc from DB |
+| `server/api/recipes/[id]/ingredients.post.ts` | Granular link create |
+| `…/ingredients/[ingredientId].put.ts` | Granular link update |
+| `…/ingredients/[ingredientId].delete.ts` | Granular link delete |
+| `server/api/migrate.post.ts` | Legacy sample seed |
+
+Prefer PersistRecipe for whole-recipe saves; leave granular ingredient routes for rare direct API edits.
 
 ## End-of-batch summary (required)
 

@@ -1,8 +1,6 @@
 import {
   enrichIngredientsViaParse,
-  linkIngredients,
   selectValidIngredients,
-  syncRecipeIngredients,
   type FormIngredient
 } from '~/composables/recipeIngredientSync'
 
@@ -25,9 +23,21 @@ export interface SavedRecipe {
   title: string
 }
 
+function toPersistIngredients(ingredients: FormIngredient[]) {
+  return ingredients.map(ing => ({
+    ingredientName: ing.ingredientName,
+    amount: ing.amount,
+    unit: ing.unit,
+    notes: ing.notes || null,
+    ingredientId: ing.ingredientId,
+    spoonacularIngredientId: ing.spoonacularIngredientId,
+    spoonacularData: ing.spoonacularData
+  }))
+}
+
 /**
  * Shared create/update flow: validate ingredients, enrich via Spoonacular parse,
- * persist recipe metadata, then link or sync recipe_ingredient rows.
+ * then persist recipe + ingredients in one request (full replace on update).
  */
 export function useRecipeSave() {
   const submitting = ref(false)
@@ -41,19 +51,15 @@ export function useRecipeSave() {
   async function createRecipe(data: RecipeSavePayload): Promise<SavedRecipe> {
     submitting.value = true
     try {
-      const ingredients = data.ingredients || []
-      const recipeBody = { ...data }
-      delete recipeBody.ingredients
+      const validIngredients = await prepareIngredients(data.ingredients || [])
 
-      const validIngredients = await prepareIngredients(ingredients)
-
-      const recipe = await $fetch<SavedRecipe>('/api/recipes', {
+      return await $fetch<SavedRecipe>('/api/recipes', {
         method: 'POST',
-        body: recipeBody
+        body: {
+          ...data,
+          ingredients: toPersistIngredients(validIngredients)
+        }
       })
-
-      await linkIngredients(recipe.id, validIngredients)
-      return recipe
     } finally {
       submitting.value = false
     }
@@ -62,19 +68,16 @@ export function useRecipeSave() {
   async function updateRecipe(recipeId: string, data: RecipeSavePayload): Promise<void> {
     submitting.value = true
     try {
-      const ingredients = data.ingredients || []
-      const recipeBody = { ...data }
-      delete recipeBody.ingredients
-
-      const validIngredients = await prepareIngredients(ingredients)
+      const validIngredients = await prepareIngredients(data.ingredients || [])
 
       await $fetch(`/api/recipes/${recipeId}`, {
         method: 'PUT',
-        body: recipeBody,
+        body: {
+          ...data,
+          ingredients: toPersistIngredients(validIngredients)
+        },
         credentials: 'include'
       })
-
-      await syncRecipeIngredients(recipeId, validIngredients)
     } finally {
       submitting.value = false
     }

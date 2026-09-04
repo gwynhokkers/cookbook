@@ -88,6 +88,8 @@ Upload is **blocked** unless `audit-recipes.mjs` has passed on the exact files b
 | Hash match | Any post-audit edit invalidates the stamp |
 | Heuristic audit | Catches dashed table rows, jammed ingredients, flavor tags as steps |
 | Upload delay | Avoids Cloudflare Worker CPU limit (503 / 1102) |
+| PersistRecipe | `import.post` / UI create+update write recipe + ingredients + FTS via one server module (fewer D1 round-trips); still pace uploads |
+| Update semantics | UI PUT with `ingredients` **fully replaces** links; omit `ingredients` for metadata-only |
 
 Do **not** use `upload.mjs --force` unless a human explicitly requests bypassing audit.
 
