@@ -7,9 +7,9 @@ import {
   inviteExpiresAt,
   inviteUnavailableReason,
   isPendingInvite,
-  parseInviteRole,
-  unavailableCopy
+  parseInviteRole
 } from '~~/server/utils/inviteToken'
+import { unavailableCopy } from '~~/shared/utils/inviteCopy'
 
 describe('invite token', () => {
   it('uses a 7-day cookie name and lifetime', () => {
