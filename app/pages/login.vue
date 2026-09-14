@@ -7,6 +7,23 @@
 
     <UPageBody>
       <div class="max-w-md mx-auto space-y-4">
+        <UAlert
+          v-if="inviteError"
+          color="warning"
+          icon="i-heroicons-exclamation-triangle"
+          title="You need an invite from an admin"
+          description="New accounts cannot be created from this page. If you already have an account, sign in below."
+        />
+        <UAlert
+          v-else-if="joiningRole"
+          color="info"
+          icon="i-heroicons-ticket"
+          :title="`You will join as ${joiningRole}`"
+          description="Sign in with GitHub or Google to create your account."
+        />
+        <p v-else class="text-sm text-muted text-center">
+          New accounts need an invite link from an admin. Existing accounts can sign in below.
+        </p>
         <template v-if="devAuthEnabled">
           <div class="space-y-3">
             <p class="text-sm font-medium text-muted text-center">
@@ -72,6 +89,18 @@ const { loggedIn } = useUserSession();
 if (loggedIn.value) {
   await navigateTo("/");
 }
+
+const route = useRoute();
+const inviteError = computed(() => route.query.error === "invite_required");
+
+const { data: currentInvite, error: inviteLookupError } = await useFetch<{ role: string }>("/api/invites/current", {
+  credentials: "include",
+});
+
+const joiningRole = computed(() => {
+  if (inviteLookupError.value || !currentInvite.value) return null;
+  return currentInvite.value.role;
+});
 
 const devPersonas: Array<{
   key: DevAuthPersona;

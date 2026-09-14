@@ -34,6 +34,62 @@
         </UAlert>
 
         <UCard>
+          <template #header>
+            <p class="font-medium">Invite someone</p>
+          </template>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <UFormField label="Permission" class="sm:w-48">
+              <USelect v-model="inviteRole" :items="roleOptions" class="w-full" />
+            </UFormField>
+            <UButton :loading="creatingInvite" @click="createInvite">
+              Create invite link
+            </UButton>
+          </div>
+          <div v-if="createdInvite" class="mt-4 space-y-2">
+            <p class="text-sm text-muted">
+              Copy this link now. A refresh cannot recover it. Revoke and create another if you lose it.
+            </p>
+            <div class="flex gap-2">
+              <UInput :model-value="createdInvite.url" readonly class="flex-1" />
+              <UButton variant="outline" @click="copyInvite">Copy</UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <p class="font-medium">Pending invites</p>
+          </template>
+          <div v-if="!pendingInvites?.length" class="text-sm text-muted">
+            No pending invites
+          </div>
+          <div v-else class="divide-y divide-gray-200 dark:divide-gray-800">
+            <div
+              v-for="invite in pendingInvites"
+              :key="invite.id"
+              class="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+            >
+              <div>
+                <UBadge :color="roleBadgeColor(invite.role)" variant="subtle" size="sm">
+                  {{ invite.role }}
+                </UBadge>
+                <p class="text-sm text-muted mt-1">
+                  Expires {{ formatDate(invite.expiresAt) }}
+                </p>
+              </div>
+              <UButton
+                color="error"
+                variant="ghost"
+                :loading="revoking === invite.id"
+                @click="revoke(invite.id)"
+              >
+                Revoke
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
           <div class="divide-y divide-gray-200 dark:divide-gray-800">
             <div
               v-for="u in users"
@@ -133,6 +189,10 @@ const roleOptions = [
 
 const updating = ref<string | null>(null)
 const toast = useToast()
+const inviteRole = ref('viewer')
+const creatingInvite = ref(false)
+const createdInvite = ref<{ id: string, url: string, role: string, expiresAt: string } | null>(null)
+const revoking = ref<string | null>(null)
 
 interface UserRow {
   id: string
@@ -149,6 +209,17 @@ const { data: users, pending, error, refresh } = await useFetch<UserRow[]>('/api
   credentials: 'include'
 })
 
+interface InviteRow {
+  id: string
+  role: string
+  expiresAt: string
+  createdAt: string
+}
+
+const { data: pendingInvites, refresh: refreshInvites } = await useFetch<InviteRow[]>('/api/invites', {
+  credentials: 'include'
+})
+
 function roleBadgeColor(role: string) {
   if (role === 'admin') return 'error' as const
   if (role === 'editor') return 'primary' as const
@@ -161,6 +232,46 @@ function formatDate(dateStr: string) {
     month: 'short',
     day: 'numeric'
   })
+}
+
+async function createInvite() {
+  creatingInvite.value = true
+  try {
+    const created = await $fetch<{ id: string, url: string, role: string, expiresAt: string }>('/api/invites', {
+      method: 'POST',
+      body: { role: inviteRole.value },
+      credentials: 'include'
+    })
+    createdInvite.value = created
+    toast.add({ title: 'Invite created', color: 'success' })
+    await refreshInvites()
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to create invite'
+    toast.add({ title: 'Error', description: message, color: 'error' })
+  } finally {
+    creatingInvite.value = false
+  }
+}
+
+async function copyInvite() {
+  if (!createdInvite.value) return
+  await navigator.clipboard.writeText(createdInvite.value.url)
+  toast.add({ title: 'Link copied', color: 'success' })
+}
+
+async function revoke(id: string) {
+  revoking.value = id
+  try {
+    await $fetch(`/api/invites/${id}`, { method: 'DELETE', credentials: 'include' })
+    if (createdInvite.value?.id === id) createdInvite.value = null
+    toast.add({ title: 'Invite revoked', color: 'success' })
+    await refreshInvites()
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to revoke invite'
+    toast.add({ title: 'Error', description: message, color: 'error' })
+  } finally {
+    revoking.value = null
+  }
 }
 
 async function updateRole(userId: string, newRole: string) {
