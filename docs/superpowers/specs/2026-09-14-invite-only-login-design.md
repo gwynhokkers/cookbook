@@ -79,9 +79,9 @@ The cookie only carries the token across the OAuth redirect. Validity is always 
 
 - Hash the token and load the invite.
 - Spendable: set the cookie and redirect to `/login`.
-- Not spendable: do not set the cookie. Redirect to `/invite/unavailable?reason=` with one of `missing`, `expired`, `used`, `revoked`. Do not put the raw token on that URL.
+- Not spendable: do not set the cookie. Redirect to `/invite-unavailable?reason=` with one of `missing`, `expired`, `used`, `revoked`. Do not put the raw token on that URL.
 
-`/invite/unavailable` explains the reason and links to `/login` for people who already have an account. It never starts OAuth.
+`/invite-unavailable` explains the reason and links to `/login` for people who already have an account. It never starts OAuth.
 
 ### Admin API
 
@@ -171,7 +171,7 @@ If `GET /api/invites/current` succeeds, say they will join as that role. Otherwi
 
 `?error=invite_required` shows one message: you need an invite from an admin. Do not add other error codes.
 
-### `/invite/unavailable`
+### `/invite-unavailable`
 
 Explain `missing`, `expired`, `used`, or `revoked`. Link to `/login`. Do not start OAuth.
 
@@ -213,7 +213,7 @@ Cover these in server tests. Do not require a browser.
 - `server/utils/oauthLogin.ts` — `completeOAuthLogin`
 - `server/routes/auth/github.get.ts`, `server/routes/auth/google.get.ts` — call the shared login
 - `server/routes/invite/[token].get.ts`
-- `app/pages/invite/unavailable.vue`
+- `app/pages/invite-unavailable.vue`
 - `server/api/invites/index.get.ts`, `server/api/invites/index.post.ts`, `server/api/invites/[id].delete.ts`, `server/api/invites/current.get.ts`
 - `server/plugins/session-refresh.ts` — database user, slide, clear missing users
 - `server/plugins/authorization-resolver.ts` — resolve from the database user

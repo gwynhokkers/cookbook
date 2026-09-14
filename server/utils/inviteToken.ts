@@ -44,5 +44,3 @@ export function inviteUnavailableReason(
 export function isPendingInvite(invite: InviteValidity, now: Date): boolean {
   return inviteUnavailableReason(invite, now) === null
 }
-
-export { unavailableCopy } from '~~/shared/utils/inviteCopy'

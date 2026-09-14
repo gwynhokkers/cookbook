@@ -57,6 +57,20 @@ describe('decideOAuthLogin', () => {
     if (decision.kind === 'sign-in') expect(decision.patch.role).toBe('admin')
   })
 
+  it('does not overwrite an existing image when the provider picture is null', () => {
+    const decision = decideOAuthLogin({
+      profile: { ...profile, image: null },
+      existing: { ...existing, image: 'https://example.com/kept.png' },
+      invite: null,
+      isEnvAdmin: false
+    })
+    expect(decision.kind).toBe('sign-in')
+    if (decision.kind === 'sign-in') {
+      expect(decision.patch.image).toBeUndefined()
+      expect(decision.sessionUser.image).toBe('https://example.com/kept.png')
+    }
+  })
+
   it('does not attach a provider id that is already set', () => {
     const decision = decideOAuthLogin({
       profile,

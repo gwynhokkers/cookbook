@@ -255,8 +255,12 @@ async function createInvite() {
 
 async function copyInvite() {
   if (!createdInvite.value) return
-  await navigator.clipboard.writeText(createdInvite.value.url)
-  toast.add({ title: 'Link copied', color: 'success' })
+  try {
+    await navigator.clipboard.writeText(createdInvite.value.url)
+    toast.add({ title: 'Link copied', color: 'success' })
+  } catch {
+    toast.add({ title: 'Error', description: 'Failed to copy invite link', color: 'error' })
+  }
 }
 
 async function revoke(id: string) {

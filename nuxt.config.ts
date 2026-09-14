@@ -1,6 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const isVitest = process.env.VITEST === "true";
 import { SESSION_MAX_AGE_SECONDS } from "./server/utils/sessionRefresh";
+
+const isVitest = process.env.VITEST === "true";
 
 export default defineNuxtConfig({
   modules: [

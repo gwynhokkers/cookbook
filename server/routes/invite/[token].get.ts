@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const reason = inviteUnavailableReason(row ?? null, now)
   if (reason || !row) {
-    return sendRedirect(event, `/invite/unavailable?reason=${reason || 'missing'}`)
+    return sendRedirect(event, `/invite-unavailable?reason=${reason || 'missing'}`)
   }
 
   const remainingSeconds = Math.max(1, Math.floor((row.expiresAt.getTime() - now.getTime()) / 1000))

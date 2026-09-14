@@ -2,8 +2,6 @@ import { eq } from 'drizzle-orm'
 import { db, schema } from '../db'
 import { planSessionRefresh, toSessionUser, type SessionUser } from '../utils/sessionRefresh'
 
-const SESSION_NAME = 'nuxt-session'
-
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('request', async (event) => {
     const user = await refreshSessionUser(event)
@@ -34,7 +32,8 @@ async function refreshSessionUser(event: Parameters<typeof getUserSession>[0]): 
     .then(rows => rows[0])
 
   const dbUser = row ? toSessionUser(row) : null
-  const stored = event.context.sessions?.[SESSION_NAME] as { createdAt?: number } | undefined
+  const sessionName = useRuntimeConfig(event).session?.name ?? 'nuxt-session'
+  const stored = event.context.sessions?.[sessionName] as { createdAt?: number } | undefined
   const now = Date.now()
   const plan = planSessionRefresh({
     sealedUser,

@@ -24,7 +24,7 @@ export type LoginDecision =
       userId: string
       patch: {
         name: string
-        image: string | null
+        image?: string | null
         role: InviteRole
         githubId?: string
         googleId?: string
@@ -60,14 +60,16 @@ export function decideOAuthLogin(input: {
     const alreadyLinked = Boolean(input.existing[providerKey])
     const patch: {
       name: string
-      image: string | null
+      image?: string | null
       role: InviteRole
       githubId?: string
       googleId?: string
     } = {
       name: input.profile.name,
-      image,
       role
+    }
+    if (image != null) {
+      patch.image = image
     }
     if (!alreadyLinked) {
       patch[providerKey] = input.profile.providerId
@@ -80,7 +82,7 @@ export function decideOAuthLogin(input: {
         id: input.existing.id,
         name: input.profile.name || input.existing.name || email,
         email: input.existing.email,
-        image: image || input.existing.image || '',
+        image: image ?? input.existing.image ?? '',
         role
       }
     }
