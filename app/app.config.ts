@@ -1,3 +1,5 @@
+import { seoDefaults } from './config/seo'
+
 export default defineAppConfig({
   ui: {
     colors: {
@@ -23,7 +25,7 @@ export default defineAppConfig({
   //     }
   //   },
   seo: {
-    siteName: "Humboldt Kitchen - A Cookbook by Inky the Squid",
+    siteName: seoDefaults.siteName,
   },
   header: {
     navigation: [

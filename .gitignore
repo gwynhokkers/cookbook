@@ -43,3 +43,6 @@ graphify-out/
 
 .cursor
 .worktrees/
+
+# Brainstorm visual companion mockups
+.superpowers/
