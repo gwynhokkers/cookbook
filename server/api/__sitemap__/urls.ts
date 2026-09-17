@@ -1,8 +1,7 @@
-import { defineSitemapEventHandler } from '#imports'
 import { db, schema } from '../../db'
 import { loadPublicRecipeSitemapUrls } from '../../utils/recipeSitemap'
 
-export default defineSitemapEventHandler(async () => {
+export default defineEventHandler(async () => {
   return loadPublicRecipeSitemapUrls(() => {
     return db
       .select({
