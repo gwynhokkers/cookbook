@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { seoDefaults } from '~/config/seo'
+
 const { seo } = useAppConfig()
+const siteName = seo?.siteName || seoDefaults.siteName
 
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
@@ -9,17 +12,36 @@ useHead({
   ],
   htmlAttrs: {
     lang: 'en'
+  },
+  titleTemplate: (title) => {
+    if (!title || title === siteName || title.includes(siteName)) {
+      return title || siteName
+    }
+    return `${title} · ${siteName}`
   }
 })
 
 useSeoMeta({
-  titleTemplate: `%s - ${seo?.siteName}`,
-  ogSiteName: seo?.siteName,
-  ogImage: 'https://docs-template.nuxt.dev/social-card.png',
-  twitterImage: 'https://docs-template.nuxt.dev/social-card.png',
+  ogSiteName: siteName,
   twitterCard: 'summary_large_image'
 })
 
+useSchemaOrg([
+  defineWebSite({
+    name: seoDefaults.siteName,
+    description: seoDefaults.description,
+    author: definePerson({
+      name: seoDefaults.authorName,
+      url: seoDefaults.authorUrl
+    })
+  })
+])
+
+defineOgImage('Kitchen.takumi', {
+  eyebrow: seoDefaults.authorName,
+  title: seoDefaults.siteName,
+  description: seoDefaults.description
+})
 </script>
 
 <template>

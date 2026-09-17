@@ -88,8 +88,8 @@ useSeoMeta({
   ogDescription: `Edit | ${recipe.value?.title} | ${seo?.siteName}`
 })
 
-defineOgImage({
-  component: 'Recipe',
+defineOgImage('Kitchen.takumi', {
+  eyebrow: seo?.siteName,
   title: `Edit ${recipe.value?.title}`,
   description: `Edit ${recipe.value?.title} recipe`
 })

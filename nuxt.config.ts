@@ -156,8 +156,12 @@ export default defineNuxtConfig({
 
   fonts: {
     experimental: {
-      processCSSVariables: true,
+      processCSSVariables: true
     },
+    families: [
+      { name: 'Outfit', provider: 'google', weights: [400, 500], global: true },
+      { name: 'Italiana', provider: 'google', weights: [400], global: true }
+    ]
   },
 
   nitro: {

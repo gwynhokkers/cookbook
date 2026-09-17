@@ -350,11 +350,12 @@ useSeoMeta({
   ogTitle: `${recipe.value?.title} | ${seo?.siteName}`,
   description: recipe.value?.description,
   ogDescription: recipe.value?.description,
-});
+  robots: computed(() => (recipe.value?.visibility === 'private' ? 'noindex, nofollow' : undefined))
+})
 
-defineOgImage({
-  component: "Recipe",
+defineOgImage('Kitchen.takumi', {
+  eyebrow: seo?.siteName,
   title: recipe.value?.title,
-  description: recipe.value?.description,
-});
+  description: recipe.value?.description
+})
 </script>
