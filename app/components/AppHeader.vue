@@ -53,14 +53,13 @@ async function handleSignOut() {
     :ui="{ body: 'flex flex-col p-0' }"
   >
     <template #title>
-      <template v-if="header?.logo?.dark || header?.logo?.light">
-        <UColorModeImage v-bind="{ class: 'h-6 w-auto', ...header?.logo }" />
-      </template>
-      <template v-else>
-        <NuxtLink to="/" class="font-serif text-base sm:text-lg">
-          Humboldt <span class="text-biolume-600">Kitchen</span>
-        </NuxtLink>
-      </template>
+      <NuxtLink to="/" class="flex items-center gap-2 font-serif text-base sm:text-lg">
+        <UColorModeImage
+          v-if="header?.logo?.dark || header?.logo?.light"
+          v-bind="{ class: 'h-8 w-8', ...header.logo }"
+        />
+        <span>Humboldt <span class="text-biolume-600">Kitchen</span></span>
+      </NuxtLink>
     </template>
 
     <template #default>

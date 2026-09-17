@@ -3,7 +3,10 @@ const { seo } = useAppConfig()
 
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
-  link: [{ rel: 'icon', href: '/favicon.ico' }],
+  link: [
+    { rel: 'icon', type: 'image/svg+xml', href: '/inky-chef.svg', media: '(prefers-color-scheme: light)' },
+    { rel: 'icon', type: 'image/svg+xml', href: '/inky-chef-white.svg', media: '(prefers-color-scheme: dark)' }
+  ],
   htmlAttrs: {
     lang: 'en'
   }

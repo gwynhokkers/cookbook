@@ -149,9 +149,9 @@ export default defineAppConfig({
       ],
     ],
     logo: {
-      alt: "",
-      light: "",
-      dark: "",
+      alt: seoDefaults.siteName,
+      light: '/inky-chef.svg',
+      dark: '/inky-chef-white.svg'
     },
     search: true,
     colorMode: true,
