@@ -1,3 +1,5 @@
+import { seoDefaults } from './config/seo'
+
 export default defineAppConfig({
   ui: {
     colors: {
@@ -23,7 +25,7 @@ export default defineAppConfig({
   //     }
   //   },
   seo: {
-    siteName: "Humboldt Kitchen - A Cookbook by Inky the Squid",
+    siteName: seoDefaults.siteName,
   },
   header: {
     navigation: [
@@ -147,9 +149,9 @@ export default defineAppConfig({
       ],
     ],
     logo: {
-      alt: "",
-      light: "",
-      dark: "",
+      alt: seoDefaults.siteName,
+      light: '/inky-chef.svg',
+      dark: '/inky-chef-white.svg'
     },
     search: true,
     colorMode: true,

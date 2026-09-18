@@ -72,9 +72,9 @@ useSeoMeta({
   ogDescription: "Create a new recipe",
 });
 
-defineOgImage({
-  component: "Recipe",
-  title: "Create New Recipe",
-  description: "Create a new recipe",
-});
+defineOgImage('Kitchen.takumi', {
+  eyebrow: 'Humboldt Kitchen',
+  title: 'Create New Recipe',
+  description: 'Create a new recipe'
+})
 </script>

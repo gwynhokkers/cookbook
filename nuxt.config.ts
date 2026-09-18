@@ -1,12 +1,13 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { SESSION_MAX_AGE_SECONDS } from "./server/utils/sessionRefresh";
+import { seoDefaults, siteUrl } from './app/config/seo'
 
 const isVitest = process.env.VITEST === "true";
 
 export default defineNuxtConfig({
   modules: [
     "@nuxt/eslint", // '@nuxt/ui',
-    ...(isVitest ? [] : ["@nuxt/fonts", "nuxt-og-image"]),
+    ...(isVitest ? [] : ['@nuxt/fonts', '@nuxtjs/seo']),
     "@nuxt/image",
     "@nuxt/ui",
     "@comark/nuxt",
@@ -49,6 +50,49 @@ export default defineNuxtConfig({
   routeRules: {
     "/": { prerender: false },
     "/api/search.json": { prerender: false },
+  },
+
+  site: {
+    url: siteUrl,
+    name: seoDefaults.siteName,
+    description: seoDefaults.description,
+    defaultLocale: seoDefaults.locale
+  },
+
+  schemaOrg: {
+    identity: {
+      type: 'Organization',
+      name: seoDefaults.siteName,
+      url: siteUrl,
+      logo: '/inky-chef.svg'
+    }
+  },
+
+  robots: {
+    disallow: [
+      '/admin',
+      '/login',
+      '/recipes/new',
+      '/recipes/*/edit',
+      '/shopping-list',
+      '/search',
+      '/humphry',
+      '/api'
+    ]
+  },
+
+  sitemap: {
+    exclude: [
+      '/admin/**',
+      '/login',
+      '/recipes/new',
+      '/recipes/**/edit',
+      '/shopping-list',
+      '/search',
+      '/humphry',
+      '/api/**'
+    ],
+    sources: ['/api/__sitemap__/urls']
   },
 
   runtimeConfig: {
@@ -112,8 +156,12 @@ export default defineNuxtConfig({
 
   fonts: {
     experimental: {
-      processCSSVariables: true,
+      processCSSVariables: true
     },
+    families: [
+      { name: 'Outfit', provider: 'google', weights: [400, 500], global: true },
+      { name: 'Italiana', provider: 'google', weights: [400], global: true }
+    ]
   },
 
   nitro: {
