@@ -1,7 +1,4 @@
-// setUserSession is auto-imported by nuxt-auth-utils
-import { db, schema } from '../../db'
-import { eq } from 'drizzle-orm'
-import { nanoid } from 'nanoid'
+import { completeOAuthLogin } from '../../utils/oauthLogin'
 
 export default defineEventHandler(async (event) => {
   // Get the code from query params (GitHub OAuth callback)
@@ -95,82 +92,14 @@ export default defineEventHandler(async (event) => {
       email = primaryEmail?.email || emails[0]?.email || ''
     }
 
-    // Determine if this GitHub user should be auto-promoted to admin
-    const config = useRuntimeConfig(event)
-    const adminGithubIds = (config.adminGithubIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-
-    // Find or create user in database
-    const githubId = userResponse.id.toString()
-    let user = await db.select().from(schema.users)
-      .where(eq(schema.users.githubId, githubId))
-      .limit(1)
-      .then(rows => rows[0])
-
-    if (!user) {
-      // Check if user exists by email
-      user = await db.select().from(schema.users)
-        .where(eq(schema.users.email, email))
-        .limit(1)
-        .then(rows => rows[0])
-
-      const assignedRole = adminGithubIds.includes(githubId) ? 'admin' : 'viewer'
-
-      if (user) {
-        // Update existing user with GitHub ID
-        await db.update(schema.users)
-          .set({
-            githubId,
-            image: userResponse.avatar_url,
-            role: assignedRole,
-            updatedAt: new Date()
-          })
-          .where(eq(schema.users.id, user.id))
-        user = { ...user, githubId, image: userResponse.avatar_url, role: assignedRole }
-      } else {
-        // Create new user
-        const userId = nanoid()
-        await db.insert(schema.users).values({
-          id: userId,
-          name: userResponse.name || userResponse.login,
-          email,
-          githubId,
-          image: userResponse.avatar_url,
-          emailVerified: true,
-          role: assignedRole
-        })
-        user = await db.select().from(schema.users)
-          .where(eq(schema.users.id, userId))
-          .limit(1)
-          .then(rows => rows[0])!
-      }
-    } else {
-      // Update user info; auto-promote to admin if in the list
-      const roleUpdate = adminGithubIds.includes(githubId) ? 'admin' : user.role
-      await db.update(schema.users)
-        .set({
-          name: userResponse.name || userResponse.login,
-          email,
-          image: userResponse.avatar_url,
-          role: roleUpdate,
-          updatedAt: new Date()
-        })
-        .where(eq(schema.users.id, user.id))
-      user = { ...user, name: userResponse.name || userResponse.login, email, image: userResponse.avatar_url, role: roleUpdate }
-    }
-
-    // Set user session (include role for frontend and API checks)
-    await setUserSession(event, {
-      user: {
-        id: user.id,
-        name: user.name || userResponse.login,
-        email: user.email,
-        image: user.image,
-        role: user.role
-      }
+    return completeOAuthLogin(event, {
+      provider: 'github',
+      providerId: userResponse.id.toString(),
+      email: email || '',
+      name: userResponse.name || userResponse.login,
+      image: userResponse.avatar_url,
+      emailVerified: true
     })
-
-    // Redirect to home
-    return sendRedirect(event, '/')
   } catch (error: unknown) {
     const err = error as { message?: string; statusCode?: number; data?: unknown }
     console.error('[auth/github] OAuth error:', err?.message ?? error)

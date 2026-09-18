@@ -1,7 +1,4 @@
-// setUserSession is auto-imported by nuxt-auth-utils
-import { db, schema } from '../../db'
-import { eq } from 'drizzle-orm'
-import { nanoid } from 'nanoid'
+import { completeOAuthLogin } from '../../utils/oauthLogin'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -79,80 +76,14 @@ export default defineEventHandler(async (event) => {
       }
     })
 
-    const email = userResponse.email || ''
-    const adminGoogleIds = (config.adminGoogleIds || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-    const googleId = userResponse.id
-
-    let user = await db.select().from(schema.users)
-      .where(eq(schema.users.googleId, googleId))
-      .limit(1)
-      .then(rows => rows[0])
-
-    if (!user) {
-      user = await db.select().from(schema.users)
-        .where(eq(schema.users.email, email))
-        .limit(1)
-        .then(rows => rows[0])
-
-      const assignedRole = adminGoogleIds.includes(googleId) ? 'admin' : 'viewer'
-
-      if (user) {
-        await db.update(schema.users)
-          .set({
-            googleId,
-            image: userResponse.picture,
-            role: assignedRole,
-            updatedAt: new Date()
-          })
-          .where(eq(schema.users.id, user.id))
-        user = { ...user, googleId, image: userResponse.picture ?? user.image, role: assignedRole }
-      } else {
-        const userId = nanoid()
-        await db.insert(schema.users).values({
-          id: userId,
-          name: userResponse.name || email.split('@')[0],
-          email,
-          googleId,
-          image: userResponse.picture,
-          emailVerified: userResponse.verified_email,
-          role: assignedRole
-        })
-        user = await db.select().from(schema.users)
-          .where(eq(schema.users.id, userId))
-          .limit(1)
-          .then(rows => rows[0])!
-      }
-    } else {
-      const roleUpdate = adminGoogleIds.includes(googleId) ? 'admin' : user.role
-      await db.update(schema.users)
-        .set({
-          name: userResponse.name || user.name,
-          email,
-          image: userResponse.picture ?? user.image,
-          role: roleUpdate,
-          updatedAt: new Date()
-        })
-        .where(eq(schema.users.id, user.id))
-      user = {
-        ...user,
-        name: userResponse.name || user.name,
-        email,
-        image: userResponse.picture ?? user.image,
-        role: roleUpdate
-      }
-    }
-
-    await setUserSession(event, {
-      user: {
-        id: user.id,
-        name: user.name || userResponse.name || email,
-        email: user.email,
-        image: user.image,
-        role: user.role
-      }
+    return completeOAuthLogin(event, {
+      provider: 'google',
+      providerId: userResponse.id,
+      email: userResponse.email || '',
+      name: userResponse.name || (userResponse.email || '').split('@')[0],
+      image: userResponse.picture || null,
+      emailVerified: userResponse.verified_email
     })
-
-    return sendRedirect(event, '/')
   } catch (error: unknown) {
     const err = error as { message?: string; statusCode?: number; data?: unknown }
     console.error('[auth/google] OAuth error:', err?.message ?? error)

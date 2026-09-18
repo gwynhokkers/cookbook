@@ -39,6 +39,20 @@ export const users = sqliteTable('users', {
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 
+export const invites = sqliteTable('invites', {
+  id: text('id').primaryKey(),
+  tokenHash: text('token_hash').notNull().unique(),
+  role: text('role').notNull(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+  revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().defaultNow()
+})
+
+export type Invite = typeof invites.$inferSelect
+export type NewInvite = typeof invites.$inferInsert
+
 // Ingredients table
 export const ingredients = sqliteTable('ingredients', {
   id: text('id').primaryKey(),

@@ -1,4 +1,6 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { SESSION_MAX_AGE_SECONDS } from "./server/utils/sessionRefresh";
+
 const isVitest = process.env.VITEST === "true";
 
 export default defineNuxtConfig({
@@ -55,6 +57,7 @@ export default defineNuxtConfig({
       devAuth: process.env.NUXT_DEV_AUTH === "true",
     },
     session: {
+      maxAge: SESSION_MAX_AGE_SECONDS,
       password:
         process.env.NUXT_SESSION_PASSWORD ||
         "change-me-in-production-min-32-chars-long",
