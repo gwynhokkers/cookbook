@@ -4,6 +4,7 @@ import { db, schema } from '../db'
 import { toRecipeTitleCase } from '~~/shared/utils/recipeTitle'
 import { normalizeServingsForStorage } from '~~/shared/utils/parseServings'
 import { normalizeEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
+import { normalizeSourceUrl } from '~~/shared/utils/formatRecipeSource'
 import { buildRecipeSearchDocumentFromAggregate } from './recipeSearchDocument'
 import {
   syncRecipeSearchIndex,
@@ -22,6 +23,7 @@ export type PersistRecipeCreateInput = {
   imageUrl?: string | null
   tags?: string[]
   source?: string | null
+  sourceUrl?: string | null
   servings?: number | null
   estimatedMinutes?: number | null
   steps?: Array<{ title?: string; content?: string }>
@@ -44,6 +46,7 @@ export type PersistRecipeUpdateInput = {
   imageUrl?: string | null
   tags?: string[]
   source?: string | null
+  sourceUrl?: string | null
   servings?: number | null
   estimatedMinutes?: number | null
   steps?: Array<{ title?: string; content?: string }>
@@ -81,6 +84,7 @@ export type PersistRecipeRow = {
   date: Date
   tags: string[]
   source: string | null
+  sourceUrl: string | null
   servings: number | null
   estimatedMinutes: number | null
   steps: Array<{ title: string; content: string }>
@@ -95,6 +99,7 @@ export type PersistRecipeCreateResult = {
   id: string
   title: string
   source: string | null
+  sourceUrl: string | null
   visibility: 'public' | 'private'
   ingredientCount: number
   stepCount: number
@@ -110,6 +115,17 @@ export type PersistRecipeUpdateResult = {
 }
 
 type IngredientRef = { id: string; name: string }
+
+function normalizePersistSourceUrl(value: string | null | undefined): string | null {
+  try {
+    return normalizeSourceUrl(value)
+  } catch (error) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: error instanceof Error ? error.message : 'Invalid source URL'
+    })
+  }
+}
 
 async function applySpoonacularUpdate(
   ingredientId: string,
@@ -257,7 +273,7 @@ export async function createPersistRecipe(
     })
   }
 
-  const source = input.source != null ? String(input.source).trim() : null
+  const source = input.source != null ? String(input.source).trim() || null : null
   if (options.skipIfDuplicateSourceTitle && !source) {
     throw createError({
       statusCode: 400,
@@ -265,6 +281,7 @@ export async function createPersistRecipe(
     })
   }
 
+  const sourceUrl = normalizePersistSourceUrl(input.sourceUrl)
   const visibility = input.visibility === 'public' ? 'public' : 'private'
   const tags = Array.isArray(input.tags)
     ? input.tags.map((t) => String(t).trim()).filter(Boolean)
@@ -281,7 +298,8 @@ export async function createPersistRecipe(
     const duplicates = await db.select({
       id: schema.recipes.id,
       title: schema.recipes.title,
-      source: schema.recipes.source
+      source: schema.recipes.source,
+      sourceUrl: schema.recipes.sourceUrl
     })
       .from(schema.recipes)
       .where(and(
@@ -296,6 +314,7 @@ export async function createPersistRecipe(
         id: duplicates[0].id,
         title: duplicates[0].title,
         source: duplicates[0].source,
+        sourceUrl: duplicates[0].sourceUrl ?? null,
         visibility,
         ingredientCount: 0,
         stepCount: 0
@@ -314,6 +333,7 @@ export async function createPersistRecipe(
     date: now,
     tags,
     source,
+    sourceUrl,
     servings,
     estimatedMinutes,
     steps,
@@ -351,6 +371,7 @@ export async function createPersistRecipe(
     id: recipeId,
     title,
     source,
+    sourceUrl,
     visibility,
     ingredientCount: linked.length,
     stepCount: steps.length,
@@ -368,6 +389,7 @@ function mapRecipeRow(row: typeof schema.recipes.$inferSelect): PersistRecipeRow
     date: row.date,
     tags: row.tags || [],
     source: row.source,
+    sourceUrl: row.sourceUrl ?? null,
     servings: row.servings ?? null,
     estimatedMinutes: row.estimatedMinutes ?? null,
     steps: row.steps || [],
@@ -424,7 +446,10 @@ export async function updatePersistRecipe(
   if (input.date !== undefined) updateData.date = input.date
   if (input.tags !== undefined) updateData.tags = input.tags
   if (input.source !== undefined) {
-    updateData.source = input.source != null ? String(input.source).trim() : null
+    updateData.source = input.source != null ? String(input.source).trim() || null : null
+  }
+  if (input.sourceUrl !== undefined) {
+    updateData.sourceUrl = normalizePersistSourceUrl(input.sourceUrl)
   }
   if (input.servings !== undefined) {
     updateData.servings = normalizeServingsForStorage(input.servings)

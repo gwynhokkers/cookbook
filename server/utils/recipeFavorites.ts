@@ -13,6 +13,7 @@ const recipeSummaryFields = {
   date: schema.recipes.date,
   tags: schema.recipes.tags,
   source: schema.recipes.source,
+  sourceUrl: schema.recipes.sourceUrl,
   visibility: schema.recipes.visibility
 }
 

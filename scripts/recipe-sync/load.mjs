@@ -81,9 +81,9 @@ function upsertIngredient(db, row) {
 function upsertRecipe(db, row, baseUrl) {
   db.prepare(`
     INSERT INTO recipes (
-      id, title, description, image_url, date, tags, source, servings, steps, visibility, author_id, created_at, updated_at
+      id, title, description, image_url, date, tags, source, source_url, servings, steps, visibility, author_id, created_at, updated_at
     ) VALUES (
-      @id, @title, @description, @imageUrl, @date, @tags, @source, @servings, @steps, @visibility, @authorId, @createdAt, @updatedAt
+      @id, @title, @description, @imageUrl, @date, @tags, @source, @sourceUrl, @servings, @steps, @visibility, @authorId, @createdAt, @updatedAt
     )
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
@@ -92,6 +92,7 @@ function upsertRecipe(db, row, baseUrl) {
       date = excluded.date,
       tags = excluded.tags,
       source = excluded.source,
+      source_url = excluded.source_url,
       servings = excluded.servings,
       steps = excluded.steps,
       visibility = excluded.visibility,
@@ -106,6 +107,7 @@ function upsertRecipe(db, row, baseUrl) {
     date: row.date,
     tags: typeof row.tags === 'string' ? row.tags : JSON.stringify(row.tags ?? []),
     source: row.source ?? null,
+    sourceUrl: row.sourceUrl ?? null,
     servings: row.servings ?? null,
     steps: typeof row.steps === 'string' ? row.steps : JSON.stringify(row.steps ?? []),
     visibility: row.visibility ?? 'public',

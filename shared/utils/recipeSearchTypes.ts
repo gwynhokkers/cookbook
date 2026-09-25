@@ -14,6 +14,7 @@ export interface RecipeSearchResult {
   imageUrl: string | null
   tags: string[]
   source: string | null
+  sourceUrl?: string | null
   visibility: string
   matchedOn: SearchMatchField[]
   snippet?: string

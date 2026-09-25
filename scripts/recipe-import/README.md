@@ -131,6 +131,7 @@ Generic route: `POST /api/recipes/import` (Bearer `MIGRATION_SECRET`).
 - Duplicate `title` + `source` is skipped
 - Default visibility is `private` unless body sets `public`
 - `source` is required in practice for idempotency; send it on every recipe
+- Prefer `Book Title — Author` for books. For web recipes set `source` to a human label and optional `sourceUrl` to the full `https://…` link (never pack the URL into `source`).
 
 ## Output dirs
 

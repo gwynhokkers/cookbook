@@ -121,6 +121,7 @@ export default defineEventHandler(async (event) => {
           date: recipeDate,
           tags: frontmatter.tags || [],
           source: frontmatter.source || null,
+          sourceUrl: frontmatter.sourceUrl || null,
           ingredients: ingredients,
           steps: steps,
           authorId: null, // No author for migrated recipes

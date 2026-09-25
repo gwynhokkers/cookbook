@@ -12,6 +12,7 @@ interface ImportBody {
   description?: string
   tags?: string[]
   source?: string
+  sourceUrl?: string | null
   visibility?: string
   servings?: number
   estimatedMinutes?: number | null
@@ -59,6 +60,7 @@ export default defineEventHandler(async (event) => {
       description: body?.description ? String(body.description).trim() : null,
       tags: Array.isArray(body?.tags) ? body.tags : [],
       source,
+      sourceUrl: body?.sourceUrl ?? null,
       servings: body?.servings ?? null,
       estimatedMinutes: body?.estimatedMinutes ?? null,
       steps: Array.isArray(body?.steps) ? body.steps : [],
@@ -77,7 +79,8 @@ export default defineEventHandler(async (event) => {
       skipped: true,
       id: result.id,
       title: result.title,
-      source: result.source
+      source: result.source,
+      sourceUrl: result.sourceUrl
     }
   }
 
@@ -86,6 +89,7 @@ export default defineEventHandler(async (event) => {
     id: result.id,
     title: result.title,
     source: result.source,
+    sourceUrl: result.sourceUrl,
     visibility: result.visibility,
     ingredientCount: result.ingredientCount,
     stepCount: result.stepCount

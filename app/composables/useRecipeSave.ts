@@ -11,6 +11,7 @@ export interface RecipeSavePayload {
   date: string
   tags?: string[]
   source?: string
+  sourceUrl?: string | null
   visibility?: 'public' | 'private'
   servings?: number | null
   ingredients?: FormIngredient[]

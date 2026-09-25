@@ -6,6 +6,7 @@ export interface RecipeSummary {
   date: Date | number | null
   tags: string[] | null
   source: string | null
+  sourceUrl?: string | null
   visibility: string
   estimatedMinutes?: number | null
 }

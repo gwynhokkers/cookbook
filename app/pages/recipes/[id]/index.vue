@@ -127,7 +127,11 @@
             {{ item }}
           </UBadge>
         </div>
-        <RecipeSource v-if="recipe?.source" :source="recipe.source" />
+        <RecipeSource
+          v-if="recipe?.source"
+          :source="recipe.source"
+          :source-url="recipe.sourceUrl"
+        />
         <p v-if="timeLabel" class="flex items-center gap-1.5 text-sm text-muted">
           <UIcon name="i-lucide-clock" class="size-4" />
           {{ timeLabel }}

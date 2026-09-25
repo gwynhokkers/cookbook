@@ -56,9 +56,27 @@
           label="Source"
           name="source"
           class="md:col-span-2"
-          help="Cookbook title and page, blog name, or a web address — whatever you use to remember where this came from."
+          help="Cookbook or site name, e.g. Curry Easy — Atul Kochhar. Paste a bare URL here to auto-fill the link field."
         >
-          <UInput v-model="state.source" placeholder="e.g. Ottolenghi Simple p. 142, or https://…" />
+          <UInput
+            v-model="state.source"
+            placeholder="e.g. Curry Easy — Atul Kochhar"
+            @blur="onSourceBlurOrPaste"
+            @paste="onSourcePaste"
+          />
+        </UFormField>
+
+        <UFormField
+          label="Source URL"
+          name="sourceUrl"
+          class="md:col-span-2"
+          help="Optional link to the original recipe page. Opens from the recipe screen when set."
+        >
+          <UInput
+            v-model="state.sourceUrl"
+            type="url"
+            placeholder="https://…"
+          />
         </UFormField>
 
         <UFormField label="Description" name="description" class="md:col-span-2">
@@ -369,6 +387,10 @@ import {
 import { formatIngredientLine } from '~~/shared/utils/formatIngredient'
 import { DIET_TAGS, applyDietTagSelection, isDietTag, type DietTag } from '~~/shared/utils/dietTags'
 import { formatEstimatedMinutes } from '~~/shared/utils/formatEstimatedMinutes'
+import {
+  isRecipeSourceUrl,
+  splitSourceAndUrl
+} from '~~/shared/utils/formatRecipeSource'
 import type { IngredientRowModel } from './IngredientRow.vue'
 
 const props = defineProps<{
@@ -389,6 +411,10 @@ const schema = z.object({
   date: z.string().min(1, 'Date is required'),
   tags: z.array(z.string()).default([]),
   source: z.string().max(500),
+  sourceUrl: z.string().max(2000).optional().or(z.literal('')).refine(
+    (val) => !val || /^https?:\/\//i.test(val),
+    { message: 'Source URL must start with http:// or https://' }
+  ),
   visibility: z.enum(['public', 'private']).default('public'),
   servings: z.preprocess(
     (val) => (val === '' || val === undefined ? null : val),
@@ -467,6 +493,7 @@ const state = reactive({
   date: props.recipe?.date ? new Date(props.recipe.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
   tags: props.recipe?.tags || [],
   source: props.recipe?.source || '',
+  sourceUrl: props.recipe?.sourceUrl || '',
   visibility: (props.recipe?.visibility as 'public' | 'private') || 'public',
   servings: props.recipe?.servings ?? null,
   estimatedMinutes: props.recipe?.estimatedMinutes ?? null,
@@ -479,6 +506,30 @@ const state = reactive({
       }))
     : []
 })
+
+function applySourceSplitFromRaw(raw: string) {
+  const trimmed = raw.trim()
+  if (!trimmed) return
+  // Only auto-split when Source looks like a bare/packed URL and Source URL is empty
+  if (!isRecipeSourceUrl(trimmed) && !/\(https?:\/\//i.test(trimmed) && !/\shttps?:\/\//i.test(trimmed)) {
+    return
+  }
+  if (state.sourceUrl.trim()) return
+
+  const split = splitSourceAndUrl(trimmed)
+  if (split.sourceUrl) {
+    state.source = split.source || ''
+    state.sourceUrl = split.sourceUrl
+  }
+}
+
+function onSourceBlurOrPaste() {
+  applySourceSplitFromRaw(state.source)
+}
+
+function onSourcePaste() {
+  nextTick(() => applySourceSplitFromRaw(state.source))
+}
 
 // Load ingredients when component mounts or recipe changes
 onMounted(async () => {
@@ -664,6 +715,8 @@ const onSubmit = async (event: any) => {
   const stepsForSubmit = state.steps.map(({ rowId, ...step }) => step)
   const submitData = {
     ...formData,
+    source: state.source,
+    sourceUrl: state.sourceUrl?.trim() || null,
     imageUrl: state.imageUrl,
     visibility: state.visibility,
     servings: state.servings,

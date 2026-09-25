@@ -37,6 +37,7 @@ export default defineEventHandler(async (event) => {
     date,
     tags,
     source,
+    sourceUrl,
     steps,
     visibility,
     servings,
@@ -53,6 +54,7 @@ export default defineEventHandler(async (event) => {
       date: date !== undefined ? new Date(date) : undefined,
       tags,
       source,
+      sourceUrl,
       steps,
       visibility: visibility === undefined
         ? undefined

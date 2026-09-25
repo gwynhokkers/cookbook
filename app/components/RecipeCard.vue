@@ -69,6 +69,7 @@
         <RecipeSource
           v-if="recipe.source"
           :source="recipe.source"
+          :source-url="recipe.sourceUrl"
           size="sm"
           :linkable="false"
         />

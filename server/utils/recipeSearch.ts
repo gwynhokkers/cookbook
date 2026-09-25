@@ -303,6 +303,7 @@ function toBrowseResult(row: {
   imageUrl: string | null
   tags: string | string[] | null
   source: string | null
+  sourceUrl?: string | null
   visibility: string
   estimatedMinutes: number | null
 }): RecipeSearchResult {
@@ -314,6 +315,7 @@ function toBrowseResult(row: {
     imageUrl: row.imageUrl,
     tags,
     source: row.source,
+    sourceUrl: row.sourceUrl ?? null,
     visibility: row.visibility,
     estimatedMinutes: row.estimatedMinutes,
     matchedOn: [],
@@ -353,6 +355,7 @@ async function queryBrowseRecipes(
       r.image_url AS imageUrl,
       r.tags,
       r.source,
+      r.source_url AS sourceUrl,
       r.visibility,
       r.estimated_minutes AS estimatedMinutes
     FROM recipes r
@@ -367,6 +370,7 @@ async function queryBrowseRecipes(
     imageUrl: string | null
     tags: string | string[] | null
     source: string | null
+    sourceUrl: string | null
     visibility: string
     estimatedMinutes: number | null
   }>
@@ -416,6 +420,7 @@ async function searchWithFtsFiltered(
       r.image_url AS imageUrl,
       r.tags,
       r.source,
+      r.source_url AS sourceUrl,
       r.visibility,
       r.estimated_minutes AS estimatedMinutes,
       bm25(recipes_fts) AS rank
@@ -432,6 +437,7 @@ async function searchWithFtsFiltered(
     imageUrl: string | null
     tags: string | string[] | null
     source: string | null
+    sourceUrl: string | null
     visibility: string
     estimatedMinutes: number | null
     rank: number
@@ -488,6 +494,7 @@ async function searchWithFtsFiltered(
       imageUrl: row.imageUrl,
       tags,
       source: row.source,
+      sourceUrl: row.sourceUrl ?? null,
       visibility: row.visibility,
       estimatedMinutes: row.estimatedMinutes,
       matchedOn: fallback.matchedOn.length ? fallback.matchedOn : ['title'],
@@ -529,6 +536,7 @@ async function searchWithFallbackFiltered(
       r.image_url AS imageUrl,
       r.tags,
       r.source,
+      r.source_url AS sourceUrl,
       r.visibility,
       r.estimated_minutes AS estimatedMinutes,
       r.steps,
@@ -542,6 +550,7 @@ async function searchWithFallbackFiltered(
     imageUrl: string | null
     tags: string | string[] | null
     source: string | null
+    sourceUrl: string | null
     visibility: string
     estimatedMinutes: number | null
     steps: string | Array<{ title: string; content: string }> | null
@@ -583,6 +592,7 @@ async function searchWithFallbackFiltered(
       imageUrl: recipe.imageUrl,
       tags,
       source: recipe.source,
+      sourceUrl: recipe.sourceUrl ?? null,
       visibility: recipe.visibility,
       estimatedMinutes: recipe.estimatedMinutes,
       matchedOn,
