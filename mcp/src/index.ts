@@ -4,6 +4,7 @@ import { createWorker } from './worker'
 
 interface Env {
   DB: D1Database
+  APP_ORIGIN: string
 }
 
 export default createWorker<Env>(env => drizzle(env.DB, { schema })) satisfies ExportedHandler<Env>

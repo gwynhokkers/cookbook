@@ -6,7 +6,9 @@ It is separate from the Nuxt app, which runs on Cloudflare Pages. It reads the s
 
 ## What it does today
 
-One tool, `get_recipe`. Given a recipe id, it returns a **public** recipe with its ingredients (in order) and steps. Private and unknown ids both answer `Recipe not found: <id>`, so a caller can't tell a private recipe exists.
+One tool, `get_recipe`. Given a recipe id, it returns a **public** recipe with its ingredients (in order) and steps. Private and unknown ids both answer `Recipe not found: <id>`, so a caller can't tell a private recipe exists. Image paths are returned as absolute URLs on `APP_ORIGIN`.
+
+The public-only filter is the guest case of `viewRecipe` in `shared/utils/abilities.ts`, written as a query. Keep the two in step until INK-384 makes abilities callable from the Worker.
 
 There is no sign-in yet. OAuth arrives in INK-379.
 
@@ -29,6 +31,7 @@ There is no sign-in yet. OAuth arrives in INK-379.
 | Binding | Type | Notes |
 | --- | --- | --- |
 | `DB` | D1 | The app's database (`cookbook`). The Worker only runs `SELECT`s. D1 has no read-only binding, so read-only is enforced by the code, not the platform. |
+| `APP_ORIGIN` | var | The cookbook web app's origin, used to make image URLs absolute. |
 
 The Pages app owns the D1 migrations (`server/db/migrations/sqlite`). Don't add a `migrations_dir` to this Worker's config.
 
@@ -78,8 +81,10 @@ The tests run the Worker's fetch handler against an in-memory SQLite database bu
 
 ## Deploying
 
+The Worker has not been deployed yet; only a `--dry-run` build has been checked.
+
 ```bash
 bunx wrangler deploy -c mcp/wrangler.jsonc
 ```
 
-This publishes to `cookbook-mcp.<account>.workers.dev`. A CI pipeline and custom domain come in INK-380.
+This publishes to `cookbook-mcp.<account>.workers.dev`. A CI pipeline and custom domain come in INK-380. `createMcpHandler` only accepts requests addressed to localhost or the Worker's `workers.dev` hostname by default, so a custom domain needs its `allowedHostnames` option.

@@ -17,6 +17,10 @@
     }
   ],
 
+  "vars": {
+    "APP_ORIGIN": "https://cookbook.megwyn.co.uk"
+  },
+
   "observability": {
     "enabled": true
   }

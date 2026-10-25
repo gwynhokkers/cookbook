@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getPublicRecipe } from '~~/mcp/src/getPublicRecipe'
-import { createTestDb, seedRecipe, type TestDb } from './testDb'
+import { createTestDb, seedRecipe, type TestDb } from '../testDb'
 
 describe('getPublicRecipe', () => {
   let db: TestDb

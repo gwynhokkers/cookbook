@@ -21,7 +21,7 @@ const recipeOutput = z.object({
   steps: z.array(z.object({ title: z.string(), content: z.string() }))
 })
 
-export function createCookbookMcpServer(db: CookbookDb) {
+export function createCookbookMcpServer(db: CookbookDb, appOrigin: string) {
   const server = new McpServer({ name: 'cookbook-mcp', version: '0.1.0' })
 
   server.registerTool(
@@ -35,13 +35,17 @@ export function createCookbookMcpServer(db: CookbookDb) {
       annotations: { readOnlyHint: true }
     },
     async ({ recipeId }) => {
-      const recipe = await getPublicRecipe(db, recipeId)
-      if (!recipe) {
+      const found = await getPublicRecipe(db, recipeId)
+      if (!found) {
         return {
           isError: true,
           content: [{ type: 'text', text: `Recipe not found: ${recipeId}` }]
         }
       }
+      const recipe = {
+        ...found,
+        imageUrl: found.imageUrl && new URL(found.imageUrl, appOrigin).href
+      } satisfies z.infer<typeof recipeOutput>
       return {
         content: [{ type: 'text', text: JSON.stringify(recipe) }],
         structuredContent: recipe
