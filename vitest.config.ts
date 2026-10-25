@@ -22,7 +22,7 @@ export default defineConfig({
         },
         test: {
           name: 'unit',
-          include: ['tests/shared/**/*.{test,spec}.ts', 'tests/server/**/*.{test,spec}.ts', 'tests/scripts/**/*.{test,spec}.ts'],
+          include: ['tests/shared/**/*.{test,spec}.ts', 'tests/server/**/*.{test,spec}.ts', 'tests/scripts/**/*.{test,spec}.ts', 'tests/mcp/**/*.{test,spec}.ts'],
           environment: 'node'
         }
       },
