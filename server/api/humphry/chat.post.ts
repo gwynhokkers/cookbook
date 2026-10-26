@@ -10,7 +10,7 @@ const chatBodySchema = z.object({
   messages: z.array(z.object({
     id: z.string().optional(),
     role: z.enum(['user', 'assistant', 'system']),
-    parts: z.array(z.record(z.unknown())).optional(),
+    parts: z.array(z.record(z.string(), z.unknown())).optional(),
     content: z.unknown().optional()
   }).passthrough()).max(40)
 })

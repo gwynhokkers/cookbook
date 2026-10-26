@@ -17,8 +17,6 @@ There is no sign-in yet. OAuth arrives in INK-379.
 - `createMcpHandler` from the Agents SDK (`agents/mcp/server`) with an MCP SDK v2 server (`@modelcontextprotocol/server`). It is stateless: each request builds a fresh server, and there is no Durable Object. `McpAgent` is deprecated, so it is not used.
 - Streamable HTTP only, at `/mcp`. The old HTTP+SSE transport (`/sse`) is deprecated in the MCP spec and not served.
 - Drizzle reads D1 using the app's own schema, `server/db/schema.ts`.
-- Tool schemas use zod 4 through the `zod4` alias, because the Nuxt app is still on zod 3.
-
 | File | Role |
 | --- | --- |
 | `src/index.ts` | Worker entry: binds D1 to Drizzle |

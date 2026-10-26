@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/server'
-import { z } from 'zod4'
+import { z } from 'zod'
 import { getPublicRecipe, type CookbookDb } from './getPublicRecipe'
 
 const recipeOutput = z.object({
