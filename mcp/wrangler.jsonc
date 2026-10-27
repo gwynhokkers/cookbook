@@ -24,7 +24,7 @@
     }
   ],
 
-  // GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are secrets (wrangler secret put).
+  // GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and the optional GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET are secrets (wrangler secret put).
   "vars": {
     "APP_ORIGIN": "https://cookbook.megwyn.co.uk",
     // Must be the origin clients use: it is the issuer and the token audience (`${MCP_ORIGIN}/mcp`).
