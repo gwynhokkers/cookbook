@@ -343,7 +343,7 @@
       </UFormField>
     </div>
 
-    <div class="sticky bottom-3 z-10 pb-[env(safe-area-inset-bottom)]">
+    <div class="sticky bottom-3 z-10 pb-[env(safe-area-inset-bottom)] pr-[max(0px,calc(5rem-(100vw-100%)/2))]">
       <div class="rounded-xl border border-default bg-default/95 backdrop-blur-sm p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p class="text-sm text-muted">
           {{ isEdit ? 'Review changes and save when ready.' : 'Ready to publish your recipe?' }}

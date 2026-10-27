@@ -1,12 +1,28 @@
 <template>
-  <div class="rounded-xl border border-primary/30 bg-primary/5 p-5 space-y-4">
-    <div>
-      <h3 class="text-base font-semibold">Scan cookbook page (AI prefill)</h3>
-      <p class="text-sm text-muted">
-        Upload a photo/scan of a recipe page and we will prefill this form automatically.
-      </p>
-    </div>
+  <UCollapsible
+    v-model:open="open"
+    :unmount-on-hide="false"
+    class="rounded-xl border border-primary/30 bg-primary/5"
+  >
+    <button
+      type="button"
+      class="group flex w-full items-center gap-3 p-4 text-left"
+    >
+      <UIcon name="i-heroicons-sparkles" class="size-5 shrink-0 text-primary" />
+      <div class="min-w-0 flex-1">
+        <h3 class="text-base font-semibold">Scan cookbook page (AI prefill)</h3>
+        <p class="text-sm text-muted">
+          Upload a photo or scan to prefill this form.
+        </p>
+      </div>
+      <UIcon
+        name="i-heroicons-chevron-down"
+        class="size-5 shrink-0 text-muted transition-transform duration-200 group-data-[state=open]:rotate-180"
+      />
+    </button>
 
+    <template #content>
+      <div class="space-y-4 border-t border-primary/20 px-5 pt-4 pb-5">
     <div class="grid gap-3 md:grid-cols-2">
       <UFormField label="Cookbook page image">
         <ImageSourcePicker
@@ -167,7 +183,9 @@
         </div>
       </div>
     </Teleport>
-  </div>
+      </div>
+    </template>
+  </UCollapsible>
 </template>
 
 <script setup lang="ts">
@@ -186,6 +204,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   prefill: [patch: RecipePrefillPatch]
 }>()
+
+const open = ref(false)
 
 const {
   extractionFile,
@@ -210,6 +230,12 @@ const {
 } = useRecipePrefill({
   isEdit: () => props.isEdit,
   formSnapshot: () => props.formSnapshot
+})
+
+watch([extractionError, extractionSummary], ([error, summary]) => {
+  if (error || summary) {
+    open.value = true
+  }
 })
 
 const onScanAndPrefill = async () => {

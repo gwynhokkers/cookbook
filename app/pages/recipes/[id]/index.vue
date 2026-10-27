@@ -105,17 +105,20 @@
     </header>
 
     <div class="space-y-4 pb-1.5">
-      <NuxtPicture
-        v-if="recipe?.imageUrl"
-        :src="recipe.imageUrl"
-        :alt="recipe.title"
-        :img-attrs="{
-          class: 'w-full rounded-lg overflow-hidden max-h-[600px] object-cover',
-        }"
-        :width="800"
-        :height="600"
-        provider="blob"
-      />
+      <div v-if="recipe?.imageUrl" class="pt-3">
+        <NuxtPicture
+          v-if="recipe?.imageUrl"
+          :src="recipe.imageUrl"
+          :alt="recipe.title"
+          :img-attrs="{
+            class:
+              'w-full rounded-lg overflow-hidden max-h-[600px] object-cover',
+          }"
+          :width="800"
+          :height="600"
+          provider="blob"
+        />
+      </div>
       <div class="flex flex-col gap-3">
         <div v-if="recipe?.tags?.length" class="flex flex-wrap gap-2">
           <UBadge
@@ -132,7 +135,10 @@
           :source="recipe.source"
           :source-url="recipe.sourceUrl"
         />
-        <p v-if="timeLabel" class="flex items-center gap-1.5 text-sm text-muted">
+        <p
+          v-if="timeLabel"
+          class="flex items-center gap-1.5 text-sm text-muted"
+        >
           <UIcon name="i-lucide-clock" class="size-4" />
           {{ timeLabel }}
         </p>
@@ -354,12 +360,14 @@ useSeoMeta({
   ogTitle: `${recipe.value?.title} | ${seo?.siteName}`,
   description: recipe.value?.description,
   ogDescription: recipe.value?.description,
-  robots: computed(() => (recipe.value?.visibility === 'private' ? 'noindex, nofollow' : undefined))
-})
+  robots: computed(() =>
+    recipe.value?.visibility === "private" ? "noindex, nofollow" : undefined,
+  ),
+});
 
-defineOgImage('Kitchen.takumi', {
+defineOgImage("Kitchen.takumi", {
   eyebrow: seo?.siteName,
   title: recipe.value?.title,
-  description: recipe.value?.description
-})
+  description: recipe.value?.description,
+});
 </script>
