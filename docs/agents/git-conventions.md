@@ -18,7 +18,7 @@ Use one type from this list for both commits and branches.
 | `test`     | Adding or changing tests and fixtures only                                |
 | `docs`     | Documentation only, including `AGENTS.md` and `docs/`                     |
 | `build`    | Dependencies, `package.json`, `bun.lock`, `nuxt.config.ts` build settings |
-| `ci`       | CI and deploy pipeline config (Netlify, GitHub Actions)                   |
+| `ci`       | CI and deploy pipeline config (Cloudflare, GitHub Actions)                |
 | `chore`    | Maintenance that fits nowhere above                                       |
 | `revert`   | Reverting an earlier commit                                               |
 
@@ -32,7 +32,7 @@ Use one type from this list for both commits and branches.
 <footer>
 ```
 
-- **Scope** is optional, lowercase, and names the area touched: `storyblok`,
+- **Scope** is optional, lowercase, and names the area touched: `mcp`,
   `editor`, `seo`, `modal`, `cookies`, `admin`, `cloudflare`, `fonts`, `deps`.
   Omit it when the change spans several areas.
 - **Subject** is imperative mood, lowercase first letter, no trailing full stop,
@@ -135,7 +135,7 @@ Flow:
 5. **Fixes to a merged cycle:** branch `fix/ink-<id>-...` from the current
    release branch; the fix ships with that cycle.
 
-Release branches get Netlify branch deploys for preview, so each cycle can be
+Release branches get Cloudflare branch deploys for preview, so each cycle can be
 reviewed before it reaches `main`.
 
 ## Pull requests
