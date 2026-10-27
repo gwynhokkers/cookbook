@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getPublicRecipe } from '~~/mcp/src/getPublicRecipe'
+import { getRecipe } from '~~/mcp/src/getRecipe'
 import { createTestDb, seedRecipe, type TestDb } from '../testDb'
 
-describe('getPublicRecipe', () => {
+const signedIn = { id: 'u1' }
+
+describe('getRecipe', () => {
   let db: TestDb
 
   beforeEach(() => {
@@ -25,7 +27,7 @@ describe('getPublicRecipe', () => {
       ]
     })
 
-    expect(await getPublicRecipe(db, 'dal')).toEqual({
+    expect(await getRecipe(db, 'dal', null)).toEqual({
       id: 'dal',
       title: 'Tarka dal',
       description: 'Tarka dal description',
@@ -47,13 +49,19 @@ describe('getPublicRecipe', () => {
     })
   })
 
-  it('treats a private recipe as not found', async () => {
+  it('treats a private recipe as not found for a guest', async () => {
     await seedRecipe(db, { id: 'secret', title: 'Family curry', visibility: 'private' })
 
-    expect(await getPublicRecipe(db, 'secret')).toBeNull()
+    expect(await getRecipe(db, 'secret', null)).toBeNull()
+  })
+
+  it('returns a private recipe to a signed-in user', async () => {
+    await seedRecipe(db, { id: 'secret', title: 'Family curry', visibility: 'private' })
+
+    expect(await getRecipe(db, 'secret', signedIn)).toMatchObject({ id: 'secret', title: 'Family curry' })
   })
 
   it('returns null for an unknown id', async () => {
-    expect(await getPublicRecipe(db, 'nope')).toBeNull()
+    expect(await getRecipe(db, 'nope', signedIn)).toBeNull()
   })
 })

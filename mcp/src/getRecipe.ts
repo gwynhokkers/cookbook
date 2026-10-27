@@ -4,10 +4,13 @@ import * as schema from '../../server/db/schema'
 
 export type CookbookDb = BaseSQLiteDatabase<'sync' | 'async', unknown, typeof schema>
 
-export async function getPublicRecipe(db: CookbookDb, recipeId: string) {
+// Keep in step with viewRecipe in shared/utils/abilities.ts: guests see public recipes, signed-in users see all.
+export async function getRecipe(db: CookbookDb, recipeId: string, user: { id: string } | null) {
   const [recipe] = await db.select()
     .from(schema.recipes)
-    .where(and(eq(schema.recipes.id, recipeId), eq(schema.recipes.visibility, 'public')))
+    .where(user
+      ? eq(schema.recipes.id, recipeId)
+      : and(eq(schema.recipes.id, recipeId), eq(schema.recipes.visibility, 'public')))
     .limit(1)
 
   if (!recipe) return null
@@ -38,4 +41,4 @@ export async function getPublicRecipe(db: CookbookDb, recipeId: string) {
   }
 }
 
-export type PublicRecipe = NonNullable<Awaited<ReturnType<typeof getPublicRecipe>>>
+export type CookbookRecipe = NonNullable<Awaited<ReturnType<typeof getRecipe>>>

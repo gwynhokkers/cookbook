@@ -16,6 +16,21 @@ export function createTestDb() {
 
 export type TestDb = ReturnType<typeof createTestDb>
 
+export async function seedUser(db: TestDb, user: {
+  id: string
+  email: string
+  role?: 'viewer' | 'editor' | 'admin'
+  githubId?: string
+}) {
+  await db.insert(schema.users).values({
+    id: user.id,
+    name: user.id,
+    email: user.email,
+    role: user.role ?? 'viewer',
+    githubId: user.githubId ?? null
+  })
+}
+
 export async function seedRecipe(db: TestDb, recipe: {
   id: string
   title: string

@@ -1,0 +1,5 @@
+# Copy to mcp/.dev.vars for `bun run mcp:dev`.
+MCP_ORIGIN=http://localhost:8787
+# A GitHub OAuth app whose callback URL is http://localhost:8787/callback
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=

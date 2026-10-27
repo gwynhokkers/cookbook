@@ -1,10 +1,9 @@
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../server/db/schema'
-import { createWorker } from './worker'
+import { createOAuthWorker, type OAuthWorkerEnv } from './oauthWorker'
 
-interface Env {
+interface Env extends OAuthWorkerEnv {
   DB: D1Database
-  APP_ORIGIN: string
 }
 
-export default createWorker<Env>(env => drizzle(env.DB, { schema })) satisfies ExportedHandler<Env>
+export default createOAuthWorker<Env>(env => drizzle(env.DB, { schema })) satisfies ExportedHandler<Env>

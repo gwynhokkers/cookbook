@@ -17,13 +17,15 @@ export default defineConfig({
         resolve: {
           alias: {
             '~~': root,
-            '@@': root
+            '@@': root,
+            'cloudflare:workers': `${root}tests/mcp/cloudflareWorkersStub.ts`
           }
         },
         test: {
           name: 'unit',
           include: ['tests/shared/**/*.{test,spec}.ts', 'tests/server/**/*.{test,spec}.ts', 'tests/scripts/**/*.{test,spec}.ts', 'tests/mcp/**/*.{test,spec}.ts'],
-          environment: 'node'
+          environment: 'node',
+          server: { deps: { inline: ['@cloudflare/workers-oauth-provider'] } }
         }
       },
       // Reserved for Nuxt-runtime tests (composables, components) — unused in V1 bootstrap.
