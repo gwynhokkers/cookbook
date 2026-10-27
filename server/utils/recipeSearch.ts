@@ -1,7 +1,9 @@
 import type { RecipeSearchResult } from '~~/shared/utils/recipeSearchTypes'
 import { db } from '../db'
 import type { Viewer } from '../domain/recipes/types'
+import { getFavoriteRecipeIds } from '../domain/recipes/favorites'
 import { searchRecipes } from '../domain/recipes/search'
+import { buildFavoritesFingerprint } from './recipeFavorites'
 import {
   buildSearchCacheKey,
   getCachedSearchResults,
@@ -9,7 +11,7 @@ import {
   setCachedSearchResults
 } from './recipeSearchIndex'
 
-/** First page of text-search results, cached in KV. */
+/** First page of text-search results, cached in KV per viewer and favourites. */
 export async function searchRecipesCached(
   viewer: Viewer,
   options: { query: string, limit?: number }
@@ -18,13 +20,16 @@ export async function searchRecipesCached(
   if (trimmed.length < 2) return []
 
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
+  const favoritesFingerprint = viewer
+    ? buildFavoritesFingerprint(viewer.id, await getFavoriteRecipeIds(db, viewer.id))
+    : 'none'
 
   const cacheVersion = await getSearchCacheVersion()
   const cacheKey = buildSearchCacheKey(
     cacheVersion,
     !!viewer,
     'all',
-    'none',
+    favoritesFingerprint,
     trimmed,
     limit
   )
