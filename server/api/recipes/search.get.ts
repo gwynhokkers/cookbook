@@ -1,7 +1,7 @@
-import { viewAllRecipes } from '~~/shared/utils/abilities'
 import { parseRecipeSearchFilters } from '~~/shared/utils/recipeSearchFilters'
-import { getFavoriteRecipeIds, buildFavoritesFingerprint } from '../../utils/recipeFavorites'
-import { queryRecipeSearch } from '../../utils/recipeSearch'
+import { db } from '../../db'
+import { searchRecipes } from '../../domain/recipes/search'
+import { getViewer } from '../../utils/viewer'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -10,36 +10,20 @@ export default defineEventHandler(async (event) => {
   const pageSize = Math.min(Math.max(Number(query.limit) || 12, 1), 12)
   const scope = String(query.scope || 'all') === 'favorites' ? 'favorites' : 'all'
   const filters = parseRecipeSearchFilters(query as Record<string, unknown>)
-  const canViewAll = await allows(event, viewAllRecipes)
-  const searchQuery = q.length >= 2 ? q : ''
+  const viewer = await getViewer(event)
 
-  if (scope === 'favorites' && !canViewAll) {
+  if (scope === 'favorites' && !viewer) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Sign in required to search favourites'
     })
   }
 
-  let favoriteRecipeIds: string[] = []
-  let favoritesFingerprint = 'none'
-
-  if (canViewAll) {
-    const session = await getUserSession(event)
-    const userId = (session.user as Record<string, unknown> | undefined)?.id as string | undefined
-    if (userId) {
-      favoriteRecipeIds = await getFavoriteRecipeIds(userId)
-      favoritesFingerprint = buildFavoritesFingerprint(userId, favoriteRecipeIds)
-    }
-  }
-
-  return queryRecipeSearch({
-    query: searchQuery,
+  return searchRecipes(db, viewer, {
+    query: q.length >= 2 ? q : '',
     filters,
     page,
     pageSize,
-    signedIn: canViewAll,
-    scope,
-    favoriteRecipeIds,
-    favoritesFingerprint
+    scope
   })
 })

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { getRecipe, type CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
+import { getRecipe } from '../../server/domain/recipes/getRecipe'
 import type { SignedInUser } from './signedInUser'
 
 const recipeOutput = z.object({

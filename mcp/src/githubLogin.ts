@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import * as schema from '../../server/db/schema'
 import { decideOAuthLogin } from '../../server/utils/oauthLoginDecision'
-import type { CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
 
 export type GithubProfile = {
   githubId: string

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import * as schema from '../../server/db/schema'
-import type { CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
 
 /** What an OAuth grant stores. The role is deliberately absent: it is read from D1 on every request. */
 export type GrantProps = { userId: string }

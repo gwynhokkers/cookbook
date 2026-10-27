@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectDistinctSources, collectDistinctTags } from '~~/server/utils/recipeFacets'
+import { collectDistinctSources, collectDistinctTags } from '~~/server/domain/recipes/facets'
 
 describe('recipeFacets', () => {
   const rows = [

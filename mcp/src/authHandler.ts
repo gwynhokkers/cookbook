@@ -5,7 +5,7 @@ import {
   type ConsentDescription,
   type OAuthHelpers
 } from '@cloudflare/workers-oauth-provider'
-import type { CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
 import { resolveGithubLogin, type GithubProfile } from './githubLogin'
 import type { OAuthWorkerEnv } from './oauthWorker'
 import type { GrantProps } from './signedInUser'

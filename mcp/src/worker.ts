@@ -1,5 +1,5 @@
 import { createMcpHandler } from 'agents/mcp/server'
-import type { CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
 import { createCookbookMcpServer } from './server'
 import { findSignedInUser, type GrantProps } from './signedInUser'
 

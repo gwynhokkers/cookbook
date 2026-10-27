@@ -1,16 +1,8 @@
-import { eq } from 'drizzle-orm'
-import { db, schema } from '../../db'
-import { collectDistinctSources } from '../../utils/recipeFacets'
+import { db } from '../../db'
+import { listSources } from '../../domain/recipes/facets'
+import { getViewer } from '../../utils/viewer'
 
 export default defineEventHandler(async (event) => {
-  const canViewAll = await allows(event, viewAllRecipes)
   const q = String(getQuery(event).q || '')
-
-  let query = db.select({ source: schema.recipes.source }).from(schema.recipes)
-  if (!canViewAll) {
-    query = query.where(eq(schema.recipes.visibility, 'public'))
-  }
-
-  const rows = await query
-  return { sources: collectDistinctSources(rows, q) }
+  return { sources: await listSources(db, await getViewer(event), q) }
 })

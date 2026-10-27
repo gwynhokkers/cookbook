@@ -1,6 +1,6 @@
 import { OAuthProvider, type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { createAuthHandler } from './authHandler'
-import type { CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
 import { createWorker } from './worker'
 
 export interface OAuthWorkerEnv {
