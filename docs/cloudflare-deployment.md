@@ -56,7 +56,7 @@ If bindings or vars “disappear”, it’s usually because the deployed config 
    - **KV / CACHE** → `id` with your KV namespace IDs (from Workers & Pages → KV).
    - **BLOB** → `bucket_name` with your R2 bucket name (e.g. `cookbook-blob`).
    - **vars.GITHUB_CLIENT_ID** → your GitHub OAuth Client ID.
-   - **vars.BETTER_AUTH_URL** → your production URL (e.g. `https://cookbook.megwyn.co.uk`).
+   - **vars.BETTER_AUTH_URL** → your production URL (e.g. `https://humboldt.inkythesquid.dev`).
    - **vars.ADMIN_GITHUB_IDS** → optional; comma-separated GitHub user IDs for admin.
 3. D1 `database_id` is already set; change it only if you use a different D1 database.
 4. If you don’t use Workers AI (recipe-from-image), you can remove the `"ai"` block.
@@ -169,8 +169,8 @@ After adding, trigger a new deployment so the build and runtime use them.
 ## 6. Update GitHub OAuth for production
 
 1. Open [GitHub → Developer settings → OAuth Apps](https://github.com/settings/developers) and select your CookBook OAuth App (or create one).
-2. Set **Homepage URL** to your production URL (e.g. `https://cookbook.megwyn.co.uk`).
-3. Set **Authorization callback URL** to `https://your-domain/auth/github` (e.g. `https://cookbook.megwyn.co.uk/auth/github` — this app uses `/auth/github`, not `/api/auth/callback/github`).
+2. Set **Homepage URL** to your production URL (e.g. `https://humboldt.inkythesquid.dev`).
+3. Set **Authorization callback URL** to `https://your-domain/auth/github` (e.g. `https://humboldt.inkythesquid.dev/auth/github` — this app uses `/auth/github`, not `/api/auth/callback/github`).
 4. Save. Ensure `GITHUB_CLIENT_ID` in `wrangler.jsonc` and `GITHUB_CLIENT_SECRET` (Secret) in the dashboard match this app.
 
 ---
@@ -199,6 +199,12 @@ After adding, trigger a new deployment so the build and runtime use them.
 1. In your Pages project, go to **Custom domains** → **Set up a custom domain**.
 2. Add your domain and follow the DNS instructions (CNAME or proxy).
 3. After the domain is active, update **BETTER_AUTH_URL** and the GitHub OAuth callback URL to use the custom domain instead of `*.pages.dev`.
+
+### Production: `humboldt.inkythesquid.dev`
+
+The production app is served from `https://humboldt.inkythesquid.dev`. The old domain, `cookbook.megwyn.co.uk`, must **redirect** rather than serve the app too: web sign-in builds its OAuth callback from the request's own origin, and a GitHub OAuth App has only one callback URL, so sign-in can only work on one domain.
+
+The redirect is a Redirect Rule on the `megwyn.co.uk` zone: `cookbook.megwyn.co.uk/*` → `https://humboldt.inkythesquid.dev/${1}`, status 301, preserving the query string. Keep it in place: old links, bookmarks and stored absolute image URLs depend on it.
 
 ---
 

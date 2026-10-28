@@ -27,7 +27,7 @@ I am providing:
 Tools:
 - OCR: node scripts/recipe-import/ocr.mjs --source "<scans>" --book <slug> --limit N
 - Structure: node scripts/recipe-import/structure_recipes.mjs --book <slug> --book-source "<Book Title — Author>" --tags <tags>
-- Upload: node scripts/recipe-import/upload.mjs --book <slug> --base-url https://cookbook.megwyn.co.uk
+- Upload: node scripts/recipe-import/upload.mjs --book <slug> --base-url https://humboldt.inkythesquid.dev
 - Auth: load MIGRATION_SECRET from .env (never print it). Use `set -a; source .env; set +a` then run upload.mjs so the shell does not mangle special characters.
 
 Rules:
@@ -75,7 +75,7 @@ node scripts/recipe-import/audit-recipes.mjs --book my-book
 
 # 5. Upload (8s delay between recipes; stops on 503/1102)
 set -a; source .env; set +a
-node scripts/recipe-import/upload.mjs --book my-book --base-url https://cookbook.megwyn.co.uk
+node scripts/recipe-import/upload.mjs --book my-book --base-url https://humboldt.inkythesquid.dev
 ```
 
 ## Guardrails
@@ -110,7 +110,7 @@ Forbidden: bulk generate scripts, uploading raw structure output, nested "write 
 set -a; source .env; set +a
 node -e '
 const secret=process.env.MIGRATION_SECRET;
-const res=await fetch("https://cookbook.megwyn.co.uk/api/recipes/import",{
+const res=await fetch("https://humboldt.inkythesquid.dev/api/recipes/import",{
   method:"POST",
   headers:{Authorization:`Bearer ${secret}`,"Content-Type":"application/json"},
   body:JSON.stringify({title:"Existing Recipe Title",source:"Book Title — Author",visibility:"private",ingredients:[],steps:[]})

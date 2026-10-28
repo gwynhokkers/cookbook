@@ -33,7 +33,7 @@
 
   // GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and the optional GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET are secrets (wrangler secret put), set per environment.
   "vars": {
-    "APP_ORIGIN": "https://cookbook.megwyn.co.uk",
+    "APP_ORIGIN": "https://humboldt.inkythesquid.dev",
     // Must be the origin clients use: it is the issuer and the token audience (`${MCP_ORIGIN}/mcp`).
     "MCP_ORIGIN": "https://mcp.humboldt.inkythesquid.dev"
   },
@@ -63,7 +63,7 @@
         }
       ],
       "vars": {
-        "APP_ORIGIN": "https://cookbook.megwyn.co.uk",
+        "APP_ORIGIN": "https://humboldt.inkythesquid.dev",
         "MCP_ORIGIN": "https://cookbook-mcp-preview.gwyn-29d.workers.dev"
       }
     }
