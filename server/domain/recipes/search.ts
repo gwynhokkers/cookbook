@@ -500,11 +500,7 @@ async function searchWithFtsFiltered(
     })
   }
 
-  return applyFavoriteBoost(
-    results.sort((a, b) => b.score - a.score),
-    scope,
-    favoriteRecipeIds
-  )
+  return applyFavoriteBoost(results, scope, favoriteRecipeIds).sort((a, b) => b.score - a.score)
 }
 
 async function searchWithFallbackFiltered(
@@ -600,11 +596,7 @@ async function searchWithFallbackFiltered(
     })
   }
 
-  return applyFavoriteBoost(
-    results.sort((a, b) => b.score - a.score),
-    scope,
-    favoriteRecipeIds
-  )
+  return applyFavoriteBoost(results, scope, favoriteRecipeIds).sort((a, b) => b.score - a.score)
 }
 
 async function queryTextSearchRecipes(
