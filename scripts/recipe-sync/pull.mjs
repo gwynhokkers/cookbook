@@ -16,7 +16,7 @@ import stripJsonComments from 'strip-json-comments'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, '..', '..')
-const DEFAULT_BASE = 'https://cookbook.megwyn.co.uk'
+const DEFAULT_BASE = 'https://humboldt.inkythesquid.dev'
 const DEFAULT_ENV = 'production'
 const DEFAULT_LIMIT = 20
 const CHUNK_SIZE = 40

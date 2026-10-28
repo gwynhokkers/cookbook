@@ -1,18 +1,19 @@
 import { and, eq, sql } from 'drizzle-orm'
-import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core'
-import * as schema from '../../server/db/schema'
+import * as schema from '../../db/schema'
+import { visibleTo, type CookbookDb, type Viewer } from './types'
 
-export type CookbookDb = BaseSQLiteDatabase<'sync' | 'async', unknown, typeof schema>
-
-// Keep in step with viewRecipe in shared/utils/abilities.ts: guests see public recipes, signed-in users see all.
-export async function getRecipe(db: CookbookDb, recipeId: string, user: { id: string } | null) {
+/** The stored recipe row, or `null` if it doesn't exist or the viewer can't see it. */
+export async function findRecipe(db: CookbookDb, recipeId: string, viewer: Viewer) {
   const [recipe] = await db.select()
     .from(schema.recipes)
-    .where(user
-      ? eq(schema.recipes.id, recipeId)
-      : and(eq(schema.recipes.id, recipeId), eq(schema.recipes.visibility, 'public')))
+    .where(and(eq(schema.recipes.id, recipeId), visibleTo(viewer)))
     .limit(1)
+  return recipe ?? null
+}
 
+/** The recipe with its ingredients (in order) and steps, or `null` like `findRecipe`. */
+export async function getRecipe(db: CookbookDb, recipeId: string, viewer: Viewer) {
+  const recipe = await findRecipe(db, recipeId, viewer)
   if (!recipe) return null
 
   const ingredients = await db.select({

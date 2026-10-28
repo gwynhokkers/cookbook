@@ -3,3 +3,6 @@ MCP_ORIGIN=http://localhost:8787
 # A GitHub OAuth app whose callback URL is http://localhost:8787/callback
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+# Optional: a Google OAuth client with http://localhost:8787/callback as an authorized redirect URI
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

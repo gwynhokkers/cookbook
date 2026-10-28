@@ -1,5 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm'
-import type { RecipeSearchFilters } from '~~/shared/utils/recipeSearchFilters'
+import type { RecipeSearchFilters } from '../../../shared/utils/recipeSearchFilters'
 
 export function buildTimeFilterSql(time: RecipeSearchFilters['time']): SQL | null {
   if (!time) return null

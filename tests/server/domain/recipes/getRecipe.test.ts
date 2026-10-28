@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getRecipe } from '~~/mcp/src/getRecipe'
-import { createTestDb, seedRecipe, type TestDb } from '../testDb'
+import { findRecipe, getRecipe } from '~~/server/domain/recipes/getRecipe'
+import { createTestDb, seedRecipe, type TestDb } from '~~/tests/mcp/testDb'
 
 const signedIn = { id: 'u1' }
 
@@ -63,5 +63,37 @@ describe('getRecipe', () => {
 
   it('returns null for an unknown id', async () => {
     expect(await getRecipe(db, 'nope', signedIn)).toBeNull()
+  })
+})
+
+describe('findRecipe', () => {
+  let db: TestDb
+
+  beforeEach(() => {
+    db = createTestDb()
+  })
+
+  it('returns the whole stored recipe for a public recipe', async () => {
+    await seedRecipe(db, { id: 'dal', title: 'Tarka dal', visibility: 'public' })
+
+    expect(await findRecipe(db, 'dal', null)).toMatchObject({
+      id: 'dal',
+      title: 'Tarka dal',
+      visibility: 'public',
+      date: new Date('2026-01-01'),
+      authorId: null
+    })
+  })
+
+  it('treats a private recipe as not found for a guest', async () => {
+    await seedRecipe(db, { id: 'secret', title: 'Family curry', visibility: 'private' })
+
+    expect(await findRecipe(db, 'secret', null)).toBeNull()
+  })
+
+  it('returns a private recipe to a signed-in user', async () => {
+    await seedRecipe(db, { id: 'secret', title: 'Family curry', visibility: 'private' })
+
+    expect(await findRecipe(db, 'secret', signedIn)).toMatchObject({ id: 'secret', visibility: 'private' })
   })
 })

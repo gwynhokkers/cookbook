@@ -1,22 +1,10 @@
 import { eq, sql } from 'drizzle-orm'
 import { db, schema } from '../db'
+import { isRecipeFtsAvailable } from '../domain/recipes/fts'
 import {
   buildRecipeSearchDocumentFromAggregate,
   type RecipeSearchDocument
 } from './recipeSearchDocument'
-
-let ftsAvailable: boolean | null = null
-
-async function checkFtsAvailable(): Promise<boolean> {
-  if (ftsAvailable !== null) return ftsAvailable
-  try {
-    await db.run(sql`SELECT 1 FROM recipes_fts LIMIT 1`)
-    ftsAvailable = true
-  } catch {
-    ftsAvailable = false
-  }
-  return ftsAvailable
-}
 
 export async function buildRecipeSearchDocument(recipeId: string): Promise<RecipeSearchDocument | null> {
   const rows = await db.select({
@@ -89,7 +77,7 @@ export async function upsertRecipeSearchDocument(
   doc: RecipeSearchDocument,
   options?: { invalidateCache?: boolean }
 ) {
-  if (!(await checkFtsAvailable())) return
+  if (!(await isRecipeFtsAvailable(db))) return
 
   await upsertFtsDocument(doc)
   if (options?.invalidateCache !== false) {
@@ -98,7 +86,7 @@ export async function upsertRecipeSearchDocument(
 }
 
 export async function syncRecipeSearchIndex(recipeId: string) {
-  if (!(await checkFtsAvailable())) return
+  if (!(await isRecipeFtsAvailable(db))) return
 
   const doc = await buildRecipeSearchDocument(recipeId)
   if (!doc) {
@@ -110,7 +98,7 @@ export async function syncRecipeSearchIndex(recipeId: string) {
 }
 
 export async function deleteRecipeSearchIndex(recipeId: string) {
-  if (!(await checkFtsAvailable())) return
+  if (!(await isRecipeFtsAvailable(db))) return
 
   await db.run(sql`DELETE FROM recipes_fts WHERE recipe_id = ${recipeId}`)
   await invalidateSearchCache()
@@ -122,7 +110,7 @@ export async function rebuildRecipeSearchIndex(options?: {
 }) {
   const startedAt = Date.now()
 
-  if (!(await checkFtsAvailable())) {
+  if (!(await isRecipeFtsAvailable(db))) {
     return { indexed: 0, ftsAvailable: false, done: true, offset: 0, total: 0 }
   }
 
@@ -208,10 +196,6 @@ export async function rebuildRecipeSearchIndex(options?: {
     durationMs: Date.now() - startedAt,
     mode: 'batch' as const
   }
-}
-
-export async function isRecipeFtsAvailable() {
-  return checkFtsAvailable()
 }
 
 const SEARCH_CACHE_VERSION_KEY = 'search:version'

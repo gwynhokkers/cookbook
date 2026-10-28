@@ -1,7 +1,8 @@
 import { DIET_TAGS, type DietTag, isDietTag } from './dietTags'
 
-export type TimeFilter = 'under-30' | '30-60' | 'over-60'
-const TIME_FILTERS = new Set<TimeFilter>(['under-30', '30-60', 'over-60'])
+export const TIME_FILTER_VALUES = ['under-30', '30-60', 'over-60'] as const
+export type TimeFilter = typeof TIME_FILTER_VALUES[number]
+const TIME_FILTERS = new Set<TimeFilter>(TIME_FILTER_VALUES)
 
 export interface RecipeSearchFilters {
   tags: string[]

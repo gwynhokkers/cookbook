@@ -15,7 +15,7 @@ import Database from 'better-sqlite3'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, '..', '..')
 const DEFAULT_DB = path.join(ROOT, '.data', 'db', 'sqlite.db')
-const DEFAULT_BASE = 'https://cookbook.megwyn.co.uk'
+const DEFAULT_BASE = 'https://humboldt.inkythesquid.dev'
 
 function parseArgs(argv) {
   const args = {

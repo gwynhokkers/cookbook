@@ -21,6 +21,19 @@ function stubGithub(user: { id: number, login: string }) {
   }))
 }
 
+function stubGoogle(user: { id: string, email: string }) {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input)
+    if (url === 'https://oauth2.googleapis.com/token') {
+      return Response.json({ access_token: 'google-token', token_type: 'Bearer' })
+    }
+    if (url === 'https://www.googleapis.com/oauth2/v2/userinfo') {
+      return Response.json({ ...user, verified_email: true, name: 'Cook', picture: null })
+    }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }))
+}
+
 async function pkce() {
   const verifier = 'v'.repeat(43) + crypto.randomUUID()
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
@@ -29,7 +42,7 @@ async function pkce() {
   return { verifier, challenge }
 }
 
-describe('MCP OAuth flow with GitHub sign-in', () => {
+describe('MCP OAuth flow: consent, scopes and GitHub or Google sign-in', () => {
   let db: TestDb
   let env: Parameters<ReturnType<typeof createOAuthWorker>['fetch']>[1]
   let cookies: Map<string, string>
@@ -53,7 +66,7 @@ describe('MCP OAuth flow with GitHub sign-in', () => {
     return { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(values).toString() }
   }
 
-  async function signInWithGithub() {
+  async function openConsent(scope?: string) {
     const registration = await send('/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -70,20 +83,31 @@ describe('MCP OAuth flow with GitHub sign-in', () => {
       code_challenge: challenge,
       code_challenge_method: 'S256',
       state: 'client-state',
-      resource: `${MCP_ORIGIN}/mcp`
+      resource: `${MCP_ORIGIN}/mcp`,
+      ...(scope ? { scope } : {})
     })}`)
     expect(consentPage.status).toBe(200)
     const html = await consentPage.text()
     expect(html).toContain('Test agent')
     const handle = html.match(/name="handle" value="([^"]+)"/)![1]!
+    return { clientId, verifier, html, handle }
+  }
 
-    const toGithub = await send('/authorize', form({ handle, decision: 'approve' }))
-    expect(toGithub.status).toBe(302)
-    const githubUrl = new URL(toGithub.headers.get('location')!)
-    expect(githubUrl.origin + githubUrl.pathname).toBe('https://github.com/login/oauth/authorize')
-    expect(githubUrl.searchParams.get('redirect_uri')).toBe(`${MCP_ORIGIN}/callback`)
+  const upstreamAuthorizeUrl = {
+    github: 'https://github.com/login/oauth/authorize',
+    google: 'https://accounts.google.com/o/oauth2/v2/auth'
+  }
 
-    const callback = await send(`/callback?${new URLSearchParams({ code: 'gh-code', state: githubUrl.searchParams.get('state')! })}`)
+  async function signIn(provider: 'github' | 'google', scope?: string) {
+    const { clientId, verifier, handle } = await openConsent(scope)
+
+    const toUpstream = await send('/authorize', form({ handle, decision: 'approve', provider }))
+    expect(toUpstream.status).toBe(302)
+    const upstreamUrl = new URL(toUpstream.headers.get('location')!)
+    expect(upstreamUrl.origin + upstreamUrl.pathname).toBe(upstreamAuthorizeUrl[provider])
+    expect(upstreamUrl.searchParams.get('redirect_uri')).toBe(`${MCP_ORIGIN}/callback`)
+
+    const callback = await send(`/callback?${new URLSearchParams({ code: 'upstream-code', state: upstreamUrl.searchParams.get('state')! })}`)
     expect(callback.status).toBe(302)
     return { clientId, verifier, redirect: new URL(callback.headers.get('location')!) }
   }
@@ -120,7 +144,9 @@ describe('MCP OAuth flow with GitHub sign-in', () => {
       MCP_ORIGIN,
       OAUTH_KV: createMemoryKv(),
       GITHUB_CLIENT_ID: 'gh-client',
-      GITHUB_CLIENT_SECRET: 'gh-secret'
+      GITHUB_CLIENT_SECRET: 'gh-secret',
+      GOOGLE_CLIENT_ID: 'google-client',
+      GOOGLE_CLIENT_SECRET: 'google-secret'
     }
     await seedRecipe(db, { id: 'secret', title: 'Family curry', visibility: 'private' })
   })
@@ -133,7 +159,7 @@ describe('MCP OAuth flow with GitHub sign-in', () => {
     await seedUser(db, { id: 'u1', email: 'cook@example.com', githubId: '4242' })
     stubGithub({ id: 4242, login: 'cook' })
 
-    const { clientId, verifier, redirect } = await signInWithGithub()
+    const { clientId, verifier, redirect } = await signIn('github')
     expect(redirect.origin + redirect.pathname).toBe(CLIENT_REDIRECT)
     expect(redirect.searchParams.get('state')).toBe('client-state')
 
@@ -153,10 +179,29 @@ describe('MCP OAuth flow with GitHub sign-in', () => {
     expect((await getRecipe(refreshed.access_token, 'secret')).status).toBe(200)
   })
 
+  it('refuses get_recipe with a clear error when the connection was not granted recipes:read', async () => {
+    await seedUser(db, { id: 'u1', email: 'cook@example.com', githubId: '4242' })
+    stubGithub({ id: 4242, login: 'cook' })
+
+    const { clientId, verifier, redirect } = await signIn('github', 'shopping:read')
+    const tokens = await exchange({
+      grant_type: 'authorization_code',
+      code: redirect.searchParams.get('code')!,
+      redirect_uri: CLIENT_REDIRECT,
+      client_id: clientId,
+      code_verifier: verifier
+    })
+    const { json } = await getRecipe(tokens.access_token, 'secret')
+
+    expect(json.result.isError).toBe(true)
+    expect(json.result.content[0].text).toContain('recipes:read')
+    expect(json.result.structuredContent).toBeUndefined()
+  })
+
   it('turns away a GitHub user with no cookbook account and creates no user', async () => {
     stubGithub({ id: 9999, login: 'stranger' })
 
-    const { redirect } = await signInWithGithub()
+    const { redirect } = await signIn('github')
 
     expect(redirect.origin + redirect.pathname).toBe(CLIENT_REDIRECT)
     expect(redirect.searchParams.get('error')).toBe('access_denied')
@@ -164,10 +209,77 @@ describe('MCP OAuth flow with GitHub sign-in', () => {
     expect(await db.select().from(schema.users)).toEqual([])
   })
 
+  it('offers recipes:read on the consent page when the client asks for no scopes', async () => {
+    const { html } = await openConsent()
+
+    expect(html).toContain('recipes:read')
+    expect(html).not.toContain('shopping:read')
+  })
+
+  it('lists the scopes the client asks for on the consent page, ignoring unknown ones', async () => {
+    const { html } = await openConsent('shopping:read recipes:write openid')
+
+    expect(html).toContain('shopping:read')
+    expect(html).toContain('recipes:write')
+    expect(html).not.toContain('openid')
+    expect(html).not.toContain('recipes:read')
+  })
+
+  it('lets an existing Google user connect and read a private recipe', async () => {
+    await seedUser(db, { id: 'u1', email: 'cook@example.com' })
+    await db.update(schema.users).set({ googleId: 'g-77' })
+    stubGoogle({ id: 'g-77', email: 'cook@example.com' })
+
+    const { clientId, verifier, redirect } = await signIn('google')
+    expect(redirect.searchParams.get('error')).toBeNull()
+    const tokens = await exchange({
+      grant_type: 'authorization_code',
+      code: redirect.searchParams.get('code')!,
+      redirect_uri: CLIENT_REDIRECT,
+      client_id: clientId,
+      code_verifier: verifier
+    })
+
+    const { json } = await getRecipe(tokens.access_token, 'secret')
+    expect(json.result.structuredContent).toMatchObject({ id: 'secret', title: 'Family curry' })
+  })
+
+  it('turns away a Google user who matches only by email and creates no user', async () => {
+    await seedUser(db, { id: 'u1', email: 'cook@example.com' })
+    stubGoogle({ id: 'g-unknown', email: 'cook@example.com' })
+
+    const { redirect } = await signIn('google')
+
+    expect(redirect.searchParams.get('error')).toBe('access_denied')
+    expect(redirect.searchParams.get('code')).toBeNull()
+    expect(await db.select({ id: schema.users.id, googleId: schema.users.googleId }).from(schema.users)).toEqual([{ id: 'u1', googleId: null }])
+  })
+
+  it('sends the client a server_error when Google sign-in fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'invalid_grant' }, { status: 400 })))
+
+    const { redirect } = await signIn('google')
+
+    expect(redirect.origin + redirect.pathname).toBe(CLIENT_REDIRECT)
+    expect(redirect.searchParams.get('error')).toBe('server_error')
+    expect(redirect.searchParams.get('state')).toBe('client-state')
+  })
+
+  it('sends the client access_denied when the user denies consent', async () => {
+    const { handle } = await openConsent()
+
+    const denied = await send('/authorize', form({ handle, decision: 'deny' }))
+
+    expect(denied.status).toBe(302)
+    const redirect = new URL(denied.headers.get('location')!)
+    expect(redirect.origin + redirect.pathname).toBe(CLIENT_REDIRECT)
+    expect(redirect.searchParams.get('error')).toBe('access_denied')
+  })
+
   it('sends the client a server_error when GitHub sign-in fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'bad_verification_code' })))
 
-    const { redirect } = await signInWithGithub()
+    const { redirect } = await signIn('github')
 
     expect(redirect.origin + redirect.pathname).toBe(CLIENT_REDIRECT)
     expect(redirect.searchParams.get('error')).toBe('server_error')

@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { auditPassed, auditRecipe } from './lib/auditRecipe.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_BASE = 'https://cookbook.megwyn.co.uk'
+const DEFAULT_BASE = 'https://humboldt.inkythesquid.dev'
 const REVIEW_PASS = 'review-pass.json'
 const DEFAULT_DELAY_MS = 8000
 const SKIP_FILES = new Set(['index.json', 'upload-results.json', 'carry-forwards.json', REVIEW_PASS])

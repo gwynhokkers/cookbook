@@ -18,5 +18,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Typecheck the MCP Worker
+        run: bun run mcp:typecheck
+
       - name: Run tests with coverage
         run: bun run test:coverage

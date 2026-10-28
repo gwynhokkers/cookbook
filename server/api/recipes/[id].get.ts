@@ -1,6 +1,6 @@
-import { db, schema } from '../../db'
-import { eq } from 'drizzle-orm'
-import { viewRecipe } from '~~/shared/utils/abilities'
+import { db } from '../../db'
+import { findRecipe } from '../../domain/recipes/getRecipe'
+import { getViewer } from '../../utils/viewer'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -12,19 +12,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const recipe = await db.select()
-    .from(schema.recipes)
-    .where(eq(schema.recipes.id, id))
-    .limit(1)
+  const recipe = await findRecipe(db, id, await getViewer(event))
 
-  if (!recipe || recipe.length === 0) {
+  if (!recipe) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Recipe not found'
     })
   }
 
-  await authorize(event, viewRecipe, recipe[0])
-
-  return recipe[0]
+  return recipe
 })
