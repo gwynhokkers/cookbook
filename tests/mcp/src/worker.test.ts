@@ -27,7 +27,7 @@ async function postMcp(db: TestDb, props: Record<string, unknown>, method: strin
   return { status: response.status, json }
 }
 
-function callGetRecipe(db: TestDb, recipeId: string, props: Record<string, unknown> = { userId: 'u1' }) {
+function callGetRecipe(db: TestDb, recipeId: string, props: Record<string, unknown> = { userId: 'u1', scopes: ['recipes:read'] }) {
   return postMcp(db, props, 'tools/call', { name: 'get_recipe', arguments: { recipeId } })
 }
 

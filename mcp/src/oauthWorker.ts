@@ -1,6 +1,7 @@
 import { OAuthProvider, type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { createAuthHandler } from './authHandler'
-import type { CookbookDb } from './getRecipe'
+import type { CookbookDb } from '../../server/domain/recipes/types'
+import { supportedScopes } from './scopes'
 import { createWorker } from './worker'
 
 export interface OAuthWorkerEnv {
@@ -9,6 +10,9 @@ export interface OAuthWorkerEnv {
   OAUTH_KV: KVNamespace
   GITHUB_CLIENT_ID: string
   GITHUB_CLIENT_SECRET: string
+  /** Optional: Google sign-in is offered only when both are set. */
+  GOOGLE_CLIENT_ID?: string
+  GOOGLE_CLIENT_SECRET?: string
   OAUTH_PROVIDER?: OAuthHelpers
 }
 
@@ -24,6 +28,8 @@ export function createOAuthWorker<Env extends OAuthWorkerEnv>(getDb: (env: Env) 
       authorizeEndpoint: '/authorize',
       tokenEndpoint: '/token',
       clientRegistrationEndpoint: '/register',
+      scopesSupported: supportedScopes,
+      requiredScopes: ['recipes:read'],
       resourceMetadata: {
         resource: `${origin}/mcp`,
         authorization_servers: [origin],

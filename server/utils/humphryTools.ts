@@ -4,8 +4,8 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db, schema } from '../db'
 import { viewRecipe } from '~~/shared/utils/abilities'
-import { getFavoriteRecipeIds } from './recipeFavorites'
-import { searchRecipes } from './recipeSearch'
+import { getFavoriteRecipeIds } from '../domain/recipes/favorites'
+import { searchRecipesCached } from './recipeSearch'
 import type { HumphryRecipeSummary } from '~~/shared/utils/humphryTypes'
 import {
   formatShoppingListCopyText,
@@ -128,13 +128,7 @@ export function createHumphryTools(event: H3Event, userId: string) {
         limit: z.coerce.number().int().min(1).max(15).optional().describe('Maximum number of results (default 8)')
       }),
       execute: async ({ query, limit }) => {
-        const favoriteRecipeIds = await getFavoriteRecipeIds(userId)
-        const results = await searchRecipes({
-          query,
-          limit: limit ?? 8,
-          signedIn: true,
-          favoriteRecipeIds
-        })
+        const results = await searchRecipesCached({ id: userId }, { query, limit: limit ?? 8 })
 
         return {
           recipes: results.map(result => ({
@@ -163,7 +157,7 @@ export function createHumphryTools(event: H3Event, userId: string) {
         limit: z.coerce.number().int().min(1).max(20).optional().describe('Maximum number of favourites to return (default 10)')
       }),
       execute: async ({ limit }) => {
-        const favoriteIds = await getFavoriteRecipeIds(userId)
+        const favoriteIds = await getFavoriteRecipeIds(db, userId)
         const capped = favoriteIds.slice(0, limit ?? 10)
 
         if (!capped.length) {
