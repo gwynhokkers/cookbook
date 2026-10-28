@@ -172,6 +172,7 @@ After adding, trigger a new deployment so the build and runtime use them.
 2. Set **Homepage URL** to your production URL (e.g. `https://humboldt.inkythesquid.dev`).
 3. Set **Authorization callback URL** to `https://your-domain/auth/github` (e.g. `https://humboldt.inkythesquid.dev/auth/github` — this app uses `/auth/github`, not `/api/auth/callback/github`).
 4. Save. Ensure `GITHUB_CLIENT_ID` in `wrangler.jsonc` and `GITHUB_CLIENT_SECRET` (Secret) in the dashboard match this app.
+5. If Google sign-in is enabled, add `https://your-domain/auth/google` (e.g. `https://humboldt.inkythesquid.dev/auth/google`) to the Google OAuth client's **Authorised redirect URIs**.
 
 ---
 
