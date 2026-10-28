@@ -2,6 +2,8 @@
 
 This guide walks you through deploying the CookBook app to Cloudflare using **Cloudflare Pages** with GitHub integration. The app uses D1 (SQLite), KV, R2, and NuxtHub; everything runs natively on Cloudflare.
 
+The MCP server for AI agents is a separate Worker, deployed by GitHub Actions; see [`mcp/README.md`](../mcp/README.md#deploying).
+
 ---
 
 ## Prerequisites
