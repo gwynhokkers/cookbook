@@ -10,7 +10,7 @@ This is the inverse of [`scripts/recipe-import/`](../recipe-import/README.md), w
 2. **Local database exists** — run `bun run dev` once so migrations create `.data/db/sqlite.db`, then **stop the dev server** before loading (avoids file-lock issues).
 3. **Private recipes locally** — set `NUXT_DEV_AUTH=true` in `.env`, restart dev, and sign in at `/login` as the Editor or Admin persona.
 
-Images are **not** copied. Relative paths are rewritten to absolute production URLs (default base: `https://cookbook.megwyn.co.uk`).
+Images are **not** copied. Relative paths are rewritten to absolute production URLs (default base: `https://humboldt.inkythesquid.dev`).
 
 ## Quick start (batched)
 

@@ -36,7 +36,7 @@ defineProps({
         </p>
       </div>
       <p class="m-0 text-lg text-[#5a6d7d]">
-        cookbook.megwyn.co.uk
+        humboldt.inkythesquid.dev
       </p>
     </div>
   </div>

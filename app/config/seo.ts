@@ -1,4 +1,4 @@
-export const siteUrl = 'https://cookbook.megwyn.co.uk'
+export const siteUrl = 'https://humboldt.inkythesquid.dev'
 
 export const seoDefaults = {
   siteName: 'Humboldt Kitchen',
