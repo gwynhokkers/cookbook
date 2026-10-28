@@ -6,9 +6,19 @@ It is separate from the Nuxt app, which runs on Cloudflare Pages. It reads the s
 
 ## What it does today
 
-Agents connect with OAuth and sign in with GitHub or Google. One tool, `get_recipe`, which needs the `recipes:read` scope. Given a recipe id, it returns the recipe with its ingredients (in order) and steps. Unknown ids answer `Recipe not found: <id>`. Image paths are returned as absolute URLs on `APP_ORIGIN`.
+Agents connect with OAuth and sign in with GitHub or Google. Every tool is read-only and needs the `recipes:read` scope:
 
-Every `/mcp` request needs a token, so every caller is signed in and can read private recipes. The query (`getRecipe`) still takes a `null` viewer for the guest case, which is the public-only rule of `viewRecipe` in `shared/utils/abilities.ts`. Keep the two in step until INK-384 makes abilities callable from the Worker.
+| Tool | Does | Same as |
+| --- | --- | --- |
+| `get_recipe` | One recipe by id, with its ingredients (in order) and steps. Unknown ids answer `Recipe not found: <id>`. | `GET /api/recipes/:id` |
+| `search_recipes` | Ranked search on a query of two or more characters, 12 per page, with the tag, source, diet and time filters. | `GET /api/recipes/search?q=` |
+| `list_recipes` | Newest first, 12 per page, with the same filters. | `GET /api/recipes/search` with no query (the web's filtered browsing) |
+| `list_tags` | Tags in alphabetical order, without diet tags, optionally narrowed by `q`. | `GET /api/recipes/tags` |
+| `list_sources` | Sources in alphabetical order, optionally narrowed by `q`. | `GET /api/recipes/sources` |
+
+They all call the shared queries in `server/domain/recipes/`. Image paths are returned as absolute URLs on `APP_ORIGIN`. The search ranks the user's favourites higher, as on the web.
+
+Every `/mcp` request needs a token, so every caller is signed in and can read private recipes. The queries still take a `null` viewer for the guest case, which is the public-only rule of `viewRecipe` in `shared/utils/abilities.ts`. Keep the two in step until INK-384 makes abilities callable from the Worker.
 
 ### Sign-in is invite-only
 
@@ -110,7 +120,7 @@ It serves `http://localhost:8787/mcp`. Connect with the MCP Inspector, which run
 bunx @modelcontextprotocol/inspector
 ```
 
-Choose **Streamable HTTP**, enter `http://localhost:8787/mcp`, and use **Open Auth Settings → Quick OAuth Flow** (or just **Connect**). You'll see the consent page, then GitHub (or Google, if configured). Then call `get_recipe` with `recipeId=dal`.
+Choose **Streamable HTTP**, enter `http://localhost:8787/mcp`, and use **Open Auth Settings → Quick OAuth Flow** (or just **Connect**). You'll see the consent page, then GitHub (or Google, if configured). Then call `get_recipe` with `recipeId=dal`, or `search_recipes` with `query=dal`.
 
 ## Tests and types
 

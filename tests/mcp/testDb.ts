@@ -36,6 +36,9 @@ export async function seedRecipe(db: TestDb, recipe: {
   title: string
   visibility: 'public' | 'private'
   imageUrl?: string
+  tags?: string[]
+  source?: string
+  date?: string
   steps?: Array<{ title: string, content: string }>
   ingredients?: Array<{ name: string, amount: string, unit: string, notes?: string, order: string }>
 }) {
@@ -44,8 +47,9 @@ export async function seedRecipe(db: TestDb, recipe: {
     title: recipe.title,
     description: `${recipe.title} description`,
     imageUrl: recipe.imageUrl ?? null,
-    date: new Date('2026-01-01'),
-    tags: ['dinner'],
+    date: new Date(recipe.date ?? '2026-01-01'),
+    tags: recipe.tags ?? ['dinner'],
+    source: recipe.source ?? null,
     servings: 4,
     estimatedMinutes: 30,
     steps: recipe.steps ?? [],
