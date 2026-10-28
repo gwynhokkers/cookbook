@@ -1,11 +1,18 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "cookbook-mcp",
+  "account_id": "29dc985ed047373fd5603291853f4b2c",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
-  "preview_urls": true,
+
+  // Production serves only the custom domain. OAuth ties tokens to MCP_ORIGIN,
+  // so workers.dev and per-version preview URLs could not sign anyone in.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "mcp.humboldt.inkythesquid.dev", "custom_domain": true }
+  ],
 
   // Same D1 database as the Pages app. The Pages app owns its migrations;
   // this Worker only reads.
@@ -24,14 +31,41 @@
     }
   ],
 
-  // GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and the optional GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET are secrets (wrangler secret put).
+  // GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and the optional GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET are secrets (wrangler secret put), set per environment.
   "vars": {
     "APP_ORIGIN": "https://cookbook.megwyn.co.uk",
     // Must be the origin clients use: it is the issuer and the token audience (`${MCP_ORIGIN}/mcp`).
-    "MCP_ORIGIN": "https://cookbook-mcp.gwyn-29d.workers.dev"
+    "MCP_ORIGIN": "https://mcp.humboldt.inkythesquid.dev"
   },
 
   "observability": {
     "enabled": true
+  },
+
+  "env": {
+    // The cookbook-mcp-preview Worker, deployed from release/cycle-* branches.
+    // Bindings and vars are not inherited, so they are repeated here.
+    "preview": {
+      "workers_dev": true,
+      "preview_urls": false,
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "cookbook",
+          "database_id": "2ff1dfb8-a2d6-48a4-bd1b-9bd128d034c6"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "OAUTH_KV",
+          "id": "cf1a46976c384a208bc2b3e531a077a0"
+        }
+      ],
+      "vars": {
+        "APP_ORIGIN": "https://cookbook.megwyn.co.uk",
+        "MCP_ORIGIN": "https://cookbook-mcp-preview.gwyn-29d.workers.dev"
+      }
+    }
   }
 }

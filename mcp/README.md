@@ -78,9 +78,9 @@ The grant stores `{ userId, scopes }`. The user's row (and role) is read from D1
 | `GOOGLE_CLIENT_ID` | secret | Optional. Google OAuth client for MCP sign-in; without both Google values the consent page offers only GitHub. |
 | `GOOGLE_CLIENT_SECRET` | secret | |
 
-The MCP Worker needs its **own** GitHub OAuth app (a GitHub OAuth app has one callback URL, and the web app's points at the Pages site). Its callback URL is `${MCP_ORIGIN}/callback`.
+Each environment needs its **own** GitHub OAuth app (a GitHub OAuth app has one callback URL, and the web app's points at the Pages site). Its callback URL is `${MCP_ORIGIN}/callback`.
 
-A Google OAuth client can have several redirect URIs, so the web app's client can be reused: add `${MCP_ORIGIN}/callback` to its **Authorized redirect URIs** in Google Cloud Console.
+A Google OAuth client can have several redirect URIs, so the web app's client can be reused by every environment: add each `${MCP_ORIGIN}/callback` to its **Authorized redirect URIs** in Google Cloud Console.
 
 The Pages app owns the D1 migrations (`server/db/migrations/sqlite`). Don't add a `migrations_dir` to this Worker's config.
 
@@ -133,32 +133,61 @@ The tests run the Worker against an in-memory SQLite database built from the rea
 
 ## Deploying
 
-One-time setup for production:
+GitHub Actions deploys the Worker (`.github/workflows/mcp-deploy.yml`). Each run typechecks the Worker, runs the whole test suite, then runs `wrangler deploy`:
 
-1. Create the KV namespace and put its id in `wrangler.jsonc` (`OAUTH_KV`):
+| Push to | Deploys | Address | Wrangler environment |
+| --- | --- | --- | --- |
+| `main` | `cookbook-mcp` (production) | `https://mcp.humboldt.inkythesquid.dev` | top level |
+| `release/cycle-*` | `cookbook-mcp-preview` | `https://cookbook-mcp-preview.gwyn-29d.workers.dev` | `preview` |
 
-   ```bash
-   bunx wrangler kv namespace create OAUTH_KV -c mcp/wrangler.jsonc
-   ```
+You can also run the workflow by hand (**Actions → Deploy MCP Worker → Run workflow**): the branch you pick deploys to production if it is `main`, otherwise to preview. Previews share one Worker, so the latest deploy wins.
 
-2. Create a GitHub OAuth app with homepage `https://cookbook-mcp.gwyn-29d.workers.dev` and callback URL `https://cookbook-mcp.gwyn-29d.workers.dev/callback`, then set its secrets:
+Both environments read the production D1, as the website's preview deploys do; they have separate KV namespaces, so tokens from one don't work on the other. Production serves only its custom domain: `workers_dev` and preview URLs are off, because OAuth ties tokens to `MCP_ORIGIN` and no other address could sign anyone in. The custom domain needs no `allowedHostnames`: `createMcpHandler` only checks the `Host` header on localhost and `workers.dev`, and leaves custom domains to Cloudflare's routing.
 
-   ```bash
-   bunx wrangler secret put GITHUB_CLIENT_ID -c mcp/wrangler.jsonc
-   bunx wrangler secret put GITHUB_CLIENT_SECRET -c mcp/wrangler.jsonc
-   ```
+The workflow never applies D1 migrations; the Pages app owns them.
 
-3. For Google sign-in, add `https://cookbook-mcp.gwyn-29d.workers.dev/callback` as an authorized redirect URI on the Google OAuth client, then set its secrets:
+### Secrets
 
-   ```bash
-   bunx wrangler secret put GOOGLE_CLIENT_ID -c mcp/wrangler.jsonc
-   bunx wrangler secret put GOOGLE_CLIENT_SECRET -c mcp/wrangler.jsonc
-   ```
+| Where | Name | Notes |
+| --- | --- | --- |
+| GitHub repository secret | `CLOUDFLARE_API_TOKEN` | An account API token with **Workers: Editor** on this account and **Zone → Workers Routes → Write** on `inkythesquid.dev` (to attach the custom domain). Editor can only update Workers that exist, which both do; creating a new one needs Workers Admin, so do that by hand. The account id is in `wrangler.jsonc`. |
+| Worker secret, each environment | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | That environment's GitHub OAuth app |
+| Worker secret, each environment | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional. The shared Google client |
 
-Then:
+Worker secrets live on the Worker and survive deploys, so CI never needs them. Set them once per environment (add `--env preview` for preview):
 
 ```bash
-bunx wrangler deploy -c mcp/wrangler.jsonc
+bunx wrangler secret put GITHUB_CLIENT_ID -c mcp/wrangler.jsonc
+bunx wrangler secret put GITHUB_CLIENT_SECRET -c mcp/wrangler.jsonc
+bunx wrangler secret put GOOGLE_CLIENT_ID -c mcp/wrangler.jsonc
+bunx wrangler secret put GOOGLE_CLIENT_SECRET -c mcp/wrangler.jsonc
 ```
 
-This publishes to `cookbook-mcp.<account>.workers.dev`. A CI pipeline and custom domain come in INK-380. For a custom domain, change `MCP_ORIGIN` (tokens issued for the old origin stop working, so clients reconnect), point the GitHub app's callback and the Google client's redirect URI at it, and pass `allowedHostnames` to `createMcpHandler`, which by default only accepts localhost and the `workers.dev` hostname.
+### OAuth callbacks
+
+| Environment | GitHub OAuth app callback URL | Google redirect URI |
+| --- | --- | --- |
+| production | `https://mcp.humboldt.inkythesquid.dev/callback` | the same |
+| preview | `https://cookbook-mcp-preview.gwyn-29d.workers.dev/callback` | the same |
+
+### Changing `MCP_ORIGIN`
+
+Tokens are issued for `${MCP_ORIGIN}/mcp`, so changing an environment's address means every connected client must reconnect. Move that environment's GitHub app callback and Google redirect URI to the new address before the deploy, or sign-in fails until you do.
+
+### Before the first production deploy from `main`
+
+That deploy moves production from `https://cookbook-mcp.gwyn-29d.workers.dev` to `https://mcp.humboldt.inkythesquid.dev` and turns the old address off. In order:
+
+1. Create the `CLOUDFLARE_API_TOKEN` (see the secrets table) and add it as a GitHub repository secret.
+2. Change the production GitHub OAuth app's homepage and callback URL to the new address, and add the new callback to the Google client's redirect URIs.
+3. Merge `release/cycle-<n>` into `main`. The workflow deploys and attaches the custom domain; Cloudflare creates its DNS record and certificate, which can take a few minutes.
+4. Reconnect your MCP clients to `https://mcp.humboldt.inkythesquid.dev/mcp`.
+
+A new environment's KV namespace is created with `bunx wrangler kv namespace create <name>`; put its id in that environment's `kv_namespaces`.
+
+### Deploying by hand
+
+```bash
+bunx wrangler deploy -c mcp/wrangler.jsonc --env=           # production
+bunx wrangler deploy -c mcp/wrangler.jsonc --env preview    # preview
+```
